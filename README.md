@@ -123,11 +123,6 @@ The application is deployed on Streamlit Cloud and can be accessed at:
 6. **Admin Panel** (Admins only): Manage users and delete accounts.
 7. **Account Settings**: Change passwords or delete your account.
 
-## Security
-- Passwords are stored in plain text in Supabase for simplicity (not recommended for production). Consider hashing passwords with `bcrypt` for enhanced security.
-- Admin privileges are restricted to a designated admin username and password.
-- File uploads are validated for supported types (PDF, JPG, PNG) and securely stored in Cloudinary.
-
 ## Contributing
 Contributions are welcome! To contribute:
 1. Fork the repository.

@@ -359,20 +359,20 @@ def add_order(receiver_name, date, expected_delivery_date, product, description,
     order_id = 1 if org_orders.empty else org_orders["order_id"].max() + 1
     
     new_order = {
-        "order_id": order_id,
+        "order_id": int(order_id),  # Convert to Python int
         "org": st.session_state.current_org,
         "receiver_name": receiver_name,
         "date": str(date),
         "expected_delivery_date": str(expected_delivery_date),
         "product": product,
         "description": description,
-        "quantity": quantity,
-        "price": price,
-        "basic_price": basic_price,
-        "gst": gst,
-        "advance_payment": advance_payment,
-        "total_amount_with_gst": total_amount_with_gst,
-        "pending_amount": pending_amount,
+        "quantity": int(quantity),  # Convert to Python int
+        "price": float(price),  # Convert to Python float
+        "basic_price": float(basic_price),  # Convert to Python float
+        "gst": float(gst),  # Convert to Python float
+        "advance_payment": float(advance_payment),  # Convert to Python float
+        "total_amount_with_gst": float(total_amount_with_gst),  # Convert to Python float
+        "pending_amount": float(pending_amount),  # Convert to Python float
         "status": "Pending",
         "created_by": st.session_state.current_user
     }
@@ -385,7 +385,6 @@ def add_order(receiver_name, date, expected_delivery_date, product, description,
     st.session_state.clear_form = True
     logger.info(f"Added order {order_id} for org {st.session_state.current_org}")
     return True
-
 def export_to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:

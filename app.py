@@ -16,25 +16,27 @@ import logging
 from sklearn.linear_model import LinearRegression
 import seaborn as sns
 from scipy import stats
-import datetime
 import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file fro local 
+# Load environment variables from .env file for local
 if os.path.exists(".env"):
     from dotenv import load_dotenv
     load_dotenv()
     cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
     api_key = os.getenv("CLOUDINARY_API_KEY")
     api_secret = os.getenv("CLOUDINARY_API_SECRET")
-    ## fro the secret file for deploy
+    admin_username = os.getenv("ADMIN_USERNAME")
+    admin_password = os.getenv("ADMIN_PASSWORD")
 else:
     cloud_name = st.secrets["CLOUDINARY_CLOUD_NAME"]
     api_key = st.secrets["CLOUDINARY_API_KEY"]
     api_secret = st.secrets["CLOUDINARY_API_SECRET"]
+    admin_username = st.secrets["ADMIN_USERNAME"]
+    admin_password = st.secrets["ADMIN_PASSWORD"]
 
 # Configure Cloudinary
 cloudinary.config(
@@ -53,7 +55,7 @@ def init_db():
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
-    # Create users table
+    # Create users table if it doesn't exist
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -62,7 +64,14 @@ def init_db():
         )
     ''')
     
-    # Create orders table
+    # Check if is_admin column exists
+    c.execute("PRAGMA table_info(users)")
+    columns = [info[1] for info in c.fetchall()]
+    if "is_admin" not in columns:
+        logger.info("Adding is_admin column to users table")
+        c.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+        logger.info("is_admin column added and set to 0 for existing users")
+    
     c.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             order_id INTEGER,
@@ -85,7 +94,6 @@ def init_db():
         )
     ''')
     
-    # Create ewaybills table
     c.execute('''
         CREATE TABLE IF NOT EXISTS ewaybills (
             order_id INTEGER,
@@ -100,13 +108,11 @@ def init_db():
         )
     ''')
     
-    # Check if resource_type column exists and add it if not
     c.execute("PRAGMA table_info(ewaybills)")
     columns = [info[1] for info in c.fetchall()]
     if "resource_type" not in columns:
         logger.info("Adding resource_type column to ewaybills table")
         c.execute("ALTER TABLE ewaybills ADD COLUMN resource_type TEXT")
-        # Populate resource_type for existing records
         c.execute('''
             UPDATE ewaybills SET resource_type = CASE
                 WHEN file_name LIKE '%.pdf' THEN 'raw'
@@ -127,6 +133,8 @@ if "current_user" not in st.session_state:
     st.session_state.current_user = None
 if "current_org" not in st.session_state:
     st.session_state.current_org = None
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
 if "form_submitted" not in st.session_state:
     st.session_state.form_submitted = False
 if "form_message" not in st.session_state:
@@ -151,16 +159,20 @@ def load_users():
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT * FROM users")
-    users = {row["username"]: {"password": row["password"], "organization": row["organization"]} for row in c.fetchall()}
+    users = {row["username"]: {
+        "password": row["password"],
+        "organization": row["organization"],
+        "is_admin": row["is_admin"]
+    } for row in c.fetchall()}
     conn.close()
     return users
 
-def save_user(username, password, organization):
+def save_user(username, password, organization, is_admin=0):
     conn = get_db_connection()
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO users (username, password, organization) VALUES (?, ?, ?)",
-                  (username, password, organization))
+        c.execute("INSERT INTO users (username, password, organization, is_admin) VALUES (?, ?, ?, ?)",
+                  (username, password, organization, is_admin))
         conn.commit()
         return True
     except sqlite3.IntegrityError:
@@ -210,6 +222,7 @@ def login(username, password):
         st.session_state.authenticated = True
         st.session_state.current_user = username
         st.session_state.current_org = users[username]["organization"]
+        st.session_state.is_admin = (username == admin_username and password == admin_password)
         return True
     return False
 
@@ -217,7 +230,6 @@ def signup(username, password, organization):
     if username in load_users():
         return False
     
-    # Password validation: min 6 chars, at least one letter, one digit, one special symbol
     password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$"
     if not re.match(password_pattern, password):
         st.error("Password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@$!%*?&).")
@@ -225,22 +237,24 @@ def signup(username, password, organization):
     
     return save_user(username, password, organization)
 
-def delete_account(username):
+def delete_account(username, by_admin=False):
     users = load_users()
     if username not in users:
         logger.error(f"User {username} not found for deletion")
+        return False
+
+    if by_admin and username == st.session_state.current_user:
+        st.error("Admin cannot delete their own account via Admin Panel. Use Account Settings to delete your account.")
         return False
 
     org = users[username]["organization"]
     conn = get_db_connection()
     c = conn.cursor()
 
-    # Get all orders for the organization
     c.execute("SELECT order_id FROM orders WHERE org = ?", (org,))
     order_ids = [row["order_id"] for row in c.fetchall()]
     logger.info(f"Found {len(order_ids)} orders for organization {org}")
 
-    # Delete e-way bills from Cloudinary and database
     ewaybills = load_ewaybills()
     deleted_files = 0
     for order_id in order_ids:
@@ -251,16 +265,15 @@ def delete_account(username):
             try:
                 result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
                 if result.get("result") == "ok":
-                    logger.info(f"Successfully deleted Cloudinary file from root: {public_id} (resource_type: {resource_type}) for order {order_id}")
+                    logger.info(f"Successfully deleted Cloudinary file: {public_id} (resource_type: {resource_type})")
                     deleted_files += 1
                 elif result.get("result") == "not found":
-                    logger.warning(f"Cloudinary file not found in root: {public_id} (resource_type: {resource_type}) for order {order_id}")
+                    logger.warning(f"Cloudinary file not found: {public_id} (resource_type: {resource_type})")
                 else:
-                    logger.error(f"Failed to delete Cloudinary file from root: {public_id} (resource_type: {resource_type}), response: {result}")
+                    logger.error(f"Failed to delete Cloudinary file: {public_id} (resource_type: {resource_type}), response: {result}")
             except Exception as e:
-                logger.error(f"Error deleting Cloudinary file from root: {public_id} (resource_type: {resource_type}) for order {order_id}: {e}")
+                logger.error(f"Error deleting Cloudinary file: {public_id} (resource_type: {resource_type}): {e}")
 
-    # Delete from database
     try:
         c.execute("DELETE FROM ewaybills WHERE org = ?", (org,))
         logger.info(f"Deleted {c.rowcount} e-way bills from database for org {org}")
@@ -277,27 +290,23 @@ def delete_account(username):
     finally:
         conn.close()
 
-    # Verify Cloudinary cleanup
     try:
-        resources = cloudinary.api.resources(prefix=f"ewaybill_{org}_", resource_type="raw")
-        remaining_files = resources.get("resources", [])
-        if remaining_files:
-            logger.warning(f"Found {len(remaining_files)} remaining Cloudinary raw files in root for org {org}: {[r['public_id'] for r in remaining_files]}")
-        else:
-            logger.info(f"No remaining Cloudinary raw files in root for org {org}")
-        resources = cloudinary.api.resources(prefix=f"ewaybill_{org}_", resource_type="image")
-        remaining_files = resources.get("resources", [])
-        if remaining_files:
-            logger.warning(f"Found {len(remaining_files)} remaining Cloudinary image files in root for org {org}: {[r['public_id'] for r in remaining_files]}")
-        else:
-            logger.info(f"No remaining Cloudinary image files in root for org {org}")
+        for resource_type in ["raw", "image"]:
+            resources = cloudinary.api.resources(prefix=f"ewaybill_{org}_", resource_type=resource_type)
+            remaining_files = resources.get("resources", [])
+            if remaining_files:
+                logger.warning(f"Found {len(remaining_files)} remaining Cloudinary {resource_type} files for org {org}: {[r['public_id'] for r in remaining_files]}")
+            else:
+                logger.info(f"No remaining Cloudinary {resource_type} files for org {org}")
     except Exception as e:
         logger.error(f"Error verifying Cloudinary cleanup for org {org}: {e}")
 
-    # Clear session state
-    st.session_state.authenticated = False
-    st.session_state.current_user = None
-    st.session_state.current_org = None
+    if not by_admin:
+        st.session_state.authenticated = False
+        st.session_state.current_user = None
+        st.session_state.current_org = None
+        st.session_state.is_admin = False
+
     logger.info(f"Account deletion completed for {username}. Deleted {deleted_files} Cloudinary files")
     return True
 
@@ -305,6 +314,7 @@ def logout():
     st.session_state.authenticated = False
     st.session_state.current_user = None
     st.session_state.current_org = None
+    st.session_state.is_admin = False
     st.session_state.form_submitted = False
     st.session_state.form_message = ""
     st.session_state.form_status = ""
@@ -351,12 +361,13 @@ def add_order(receiver_name, date, expected_delivery_date, product, description,
     st.session_state.clear_form = True
     logger.info(f"Added order {order_id} for org {st.session_state.current_org}")
     return True
+
 def export_to_excel(df):
-    """Export DataFrame to Excel"""
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False)
     return output.getvalue()
+
 def update_order_status(order_id, new_status):
     orders = load_orders()
     orders.loc[(orders["order_id"] == order_id) & (orders["org"] == st.session_state.current_org), "status"] = new_status
@@ -365,14 +376,10 @@ def update_order_status(order_id, new_status):
 
 def upload_ewaybill(order_id, file_data, file_name):
     try:
-        # Determine resource type based on file extension
         file_ext = file_name.split(".")[-1].lower()
         resource_type = "raw" if file_ext == "pdf" else "image"
-        
-        # Generate a unique public_id for root directory
         public_id = f"ewaybill_{st.session_state.current_org}_{order_id}_{uuid.uuid4()}"
         
-        # Upload to Cloudinary with public access, no folder
         upload_result = cloudinary.uploader.upload(
             file_data,
             public_id=public_id,
@@ -381,10 +388,8 @@ def upload_ewaybill(order_id, file_data, file_name):
             type="upload"
         )
         
-        # Verify the uploaded file's metadata
         resource_info = cloudinary.api.resource(public_id, resource_type=resource_type)
         if resource_info.get("access_mode") != "public":
-            # Enforce public access mode
             cloudinary.uploader.explicit(
                 public_id,
                 type="upload",
@@ -393,19 +398,15 @@ def upload_ewaybill(order_id, file_data, file_name):
             )
             resource_info = cloudinary.api.resource(public_id, resource_type=resource_type)
         
-        # Test accessibility of the secure_url
         secure_url = upload_result["secure_url"]
         try:
             response = requests.get(secure_url, timeout=5)
             response.raise_for_status()
-            st.info(f"Uploaded e-way bill ({file_ext.upper()}) is publicly accessible: {secure_url}")
             logger.info(f"Uploaded e-way bill for order {order_id}, public_id: {public_id}, url: {secure_url}, resource_type: {resource_type}")
         except requests.RequestException as e:
-            st.error(f"Uploaded {file_ext.upper()} file is not accessible: {e}. Please check Cloudinary settings or re-upload.")
             logger.error(f"Uploaded file {public_id} not accessible: {e}")
             return False
         
-        # Save e-way bill metadata to database
         save_ewaybill(
             order_id=order_id,
             org=st.session_state.current_org,
@@ -416,10 +417,8 @@ def upload_ewaybill(order_id, file_data, file_name):
             resource_type=resource_type
         )
         
-        st.info(f"E-way bill ({file_ext.upper()}) uploaded successfully to root. Public ID: {public_id}, Resource Type: {resource_type}")
         return True
     except Exception as e:
-        st.error(f"Error uploading {file_ext.upper()} to Cloudinary: {e}")
         logger.error(f"Error uploading e-way bill for order {order_id}: {e}")
         return False
 
@@ -428,7 +427,6 @@ def delete_order(order_id):
     idx_to_delete = orders[(orders["order_id"] == order_id) & (orders["org"] == st.session_state.current_org)].index
     
     if not idx_to_delete.empty:
-        # Delete associated e-way bill from Cloudinary and database
         ewaybill_key = f"{order_id}_{st.session_state.current_org}"
         ewaybills = load_ewaybills()
         if ewaybill_key in ewaybills:
@@ -437,16 +435,14 @@ def delete_order(order_id):
             try:
                 result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
                 if result.get("result") == "ok":
-                    logger.info(f"Successfully deleted Cloudinary file from root: {public_id} (resource_type: {resource_type}) for order {order_id}")
+                    logger.info(f"Successfully deleted Cloudinary file: {public_id} (resource_type: {resource_type})")
                 elif result.get("result") == "not found":
-                    logger.warning(f"Cloudinary file not found in root: {public_id} (resource_type: {resource_type}) for order {order_id}")
+                    logger.warning(f"Cloudinary file not found: {public_id} (resource_type: {resource_type})")
                 else:
-                    logger.error(f"Failed to delete Cloudinary file from root: {public_id} (resource_type: {resource_type}), response: {result}")
+                    logger.error(f"Failed to delete Cloudinary file: {public_id} (resource_type: {resource_type}), response: {result}")
             except Exception as e:
-                logger.error(f"Error deleting Cloudinary file from root: {public_id} (resource_type: {resource_type}) for order {order_id}: {e}")
-                st.error(f"Error deleting Cloudinary file: {e}")
+                logger.error(f"Error deleting Cloudinary file: {public_id} (resource_type: {resource_type}): {e}")
             
-            # Delete e-way bill from database
             conn = get_db_connection()
             c = conn.cursor()
             c.execute("DELETE FROM ewaybills WHERE order_id = ? AND org = ?", (order_id, st.session_state.current_org))
@@ -454,20 +450,19 @@ def delete_order(order_id):
             conn.commit()
             conn.close()
         
-        # Delete order from database
         orders = orders.drop(idx_to_delete)
         save_orders(orders)
         
-        # Verify Cloudinary cleanup for this order
         try:
-            resources = cloudinary.api.resources(prefix=f"ewaybill_{st.session_state.current_org}_", resource_type=resource_type)
-            remaining_files = resources.get("resources", [])
-            if remaining_files:
-                logger.warning(f"Found {len(remaining_files)} remaining Cloudinary files in root for order {order_id}: {[r['public_id'] for r in remaining_files]}")
-            else:
-                logger.info(f"No remaining Cloudinary files in root for order {order_id} (resource_type: {resource_type})")
+            for resource_type in ["raw", "image"]:
+                resources = cloudinary.api.resources(prefix=f"ewaybill_{st.session_state.current_org}_", resource_type=resource_type)
+                remaining_files = resources.get("resources", [])
+                if remaining_files:
+                    logger.warning(f"Found {len(remaining_files)} remaining Cloudinary {resource_type} files for order {order_id}")
+                else:
+                    logger.info(f"No remaining Cloudinary {resource_type} files for order {order_id}")
         except Exception as e:
-            logger.error(f"Error verifying Cloudinary cleanup for order {order_id} (resource_type: {resource_type}): {e}")
+            logger.error(f"Error verifying Cloudinary cleanup for order {order_id}: {e}")
         
         st.session_state.form_submitted = True
         st.session_state.form_message = f"Order #{order_id} deleted successfully!"
@@ -526,13 +521,13 @@ def get_org_orders():
 def get_total_revenue(df):
     if df.empty:
         return 0
-    # Calculate revenue: advance_payment for pending orders, (advance_payment + pending_amount) for completed orders
     df["revenue"] = df.apply(
         lambda row: row["advance_payment"] + row["pending_amount"] 
         if row["status"] == "Completed" else row["advance_payment"], 
         axis=1
     )
     return df["revenue"].sum()
+
 def get_monthly_summary(df):
     if df.empty:
         return {"total": 0, "completed": 0, "pending": 0, "revenue": 0, "avg_order_value": 0, "mom_growth": 0}
@@ -543,7 +538,6 @@ def get_monthly_summary(df):
     df["date"] = pd.to_datetime(df["date"])
     monthly_df = df[(df["date"].dt.month == current_month) & (df["date"].dt.year == current_year)]
     
-    # Calculate revenue: advance_payment for pending orders, (advance_payment + pending_amount) for completed orders
     monthly_df["revenue"] = monthly_df.apply(
         lambda row: row["advance_payment"] + row["pending_amount"] 
         if row["status"] == "Completed" else row["advance_payment"], 
@@ -576,6 +570,7 @@ def get_monthly_summary(df):
         result["mom_growth"] = 0
     
     return result
+
 # UI Components
 def show_login_page():
     st.title("Order Management System")
@@ -614,11 +609,14 @@ def show_login_page():
 def show_sidebar():
     st.sidebar.title(f"Organization: {st.session_state.current_org}")
     st.sidebar.write(f"Logged in as: {st.session_state.current_user}")
+    if st.session_state.is_admin:
+        st.sidebar.write("Role: Admin")
     
-    menu = st.sidebar.radio(
-        "Navigation",
-        ["Dashboard", "Add Order", "Manage Orders", "Export Reports", "Account Settings"]
-    )
+    menu_options = ["Dashboard", "Add Order", "Manage Orders", "Export Reports", "Account Settings"]
+    if st.session_state.is_admin:
+        menu_options.append("Admin Panel")
+    
+    menu = st.sidebar.radio("Navigation", menu_options)
     
     col1, col2 = st.sidebar.columns(2)
     with col1:
@@ -646,6 +644,38 @@ def show_sidebar():
         
     return menu
 
+def show_admin_panel():
+    st.title("Admin Panel")
+    
+    if not st.session_state.is_admin:
+        st.error("Access denied. Admin privileges required.")
+        return
+    
+    st.subheader("User Management")
+    
+    users = load_users()
+    if not users:
+        st.info("No users found.")
+        return
+    
+    user_data = [{"Username": k, "Organization": v["organization"]} for k, v in users.items()]
+    user_df = pd.DataFrame(user_data)
+    
+    st.write("**All Users**")
+    st.dataframe(user_df)
+    
+    st.subheader("Delete User")
+    selected_user = st.selectbox("Select User to Delete", options=[u["Username"] for u in user_data if u["Username"] != st.session_state.current_user])
+    
+    if st.button("Delete Selected User"):
+        if selected_user:
+            if delete_account(selected_user, by_admin=True):
+                st.success(f"User {selected_user} deleted successfully!")
+                st.rerun()
+            else:
+                st.error(f"Failed to delete user {selected_user}.")
+        else:
+            st.error("Please select a user to delete.")
 
 def show_dashboard():
     st.title("Dashboard")
@@ -661,11 +691,9 @@ def show_dashboard():
     
     monthly_summary = get_monthly_summary(org_orders)
     
-    # Constants for figure dimensions
     FIGURE_WIDTH = 10
     FIGURE_HEIGHT = 6
 
-    # Key Metrics (All Months)
     st.subheader("All-Time Metrics")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -677,7 +705,6 @@ def show_dashboard():
     with col4:
         st.metric("Total Pending Amount", f"${org_orders[org_orders['status'] == 'Pending']['pending_amount'].sum():.2f}")
     
-    # Key Metrics (This Month)
     st.subheader("Current Month Metrics")
     current_month = datetime.datetime.now().month
     current_year = datetime.datetime.now().year
@@ -692,15 +719,12 @@ def show_dashboard():
     with col4:
         st.metric("Total Pending Amount", f"${monthly_df[monthly_df['status'] == 'Pending']['pending_amount'].sum():.2f}")
     
-    
-    # Quantity Analysis
     st.subheader("📦 Quantity Analysis")
     org_orders["month"] = pd.to_datetime(org_orders["date"]).dt.strftime("%b %Y")
     monthly_quantity = org_orders.groupby("month")["quantity"].sum().reset_index(name="monthly_quantity")
-    # Sort by date to ensure correct chronological order
     monthly_quantity['month_dt'] = pd.to_datetime(monthly_quantity['month'], format="%b %Y")
     monthly_quantity = monthly_quantity.sort_values('month_dt').drop(columns='month_dt')
-    # Quantity Trend Line Graph
+    
     if len(monthly_quantity) > 1:
         fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
         sns.lineplot(data=monthly_quantity, x="month", y="monthly_quantity", marker="o", ax=ax)
@@ -710,7 +734,6 @@ def show_dashboard():
         plt.xticks(rotation=45)
         plt.tight_layout()
         st.pyplot(fig)
-          
     
     st.subheader("📈 Revenue and Financial Analysis")
     org_orders["month"] = pd.to_datetime(org_orders["date"]).dt.strftime("%b %Y")
@@ -720,10 +743,9 @@ def show_dashboard():
         axis=1
     )
     monthly_revenue = org_orders.groupby("month")["revenue"].sum().reset_index()
-    # Sort by date to ensure correct chronological order
     monthly_revenue['month_dt'] = pd.to_datetime(monthly_revenue['month'], format="%b %Y")
     monthly_revenue = monthly_revenue.sort_values('month_dt').drop(columns='month_dt')
-    # Revenue Metrics
+    
     if len(monthly_revenue) >= 2:
         current_revenue = monthly_revenue["revenue"].iloc[-1]
         previous_revenue = monthly_revenue["revenue"].iloc[-2]
@@ -742,8 +764,7 @@ def show_dashboard():
         with col2:
             avg_order_value = org_orders["revenue"].mean()
             st.metric("Average Order Value", f"${avg_order_value:.2f}")
-        
-    # Revenue Trend
+    
     if len(monthly_revenue) > 1:
         fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
         sns.lineplot(data=monthly_revenue, x="month", y="revenue", marker="o", ax=ax)
@@ -753,7 +774,6 @@ def show_dashboard():
         plt.xticks(rotation=45)
         plt.tight_layout()
         st.pyplot(fig)
-        
     
     st.subheader("👥 Advanced Customer Analysis")
     col1, col2 = st.columns(2)
@@ -818,9 +838,7 @@ def show_dashboard():
             "quantity": "sum",
             "pending_amount": "sum"
         }).reset_index()
-        # Sort by month_period to ensure chronological order
         monthly_metrics = monthly_metrics.sort_values("month_period")
-        # Convert month_period to string for display
         monthly_metrics["month_period"] = monthly_metrics["month_period"].astype(str)
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(FIGURE_WIDTH, 12), sharex=True)
         sns.lineplot(data=monthly_metrics, x="month_period", y="revenue", marker="o", ax=ax1, color="blue")
@@ -852,34 +870,27 @@ def show_dashboard():
             model = LinearRegression()
             model.fit(X, y)
             
-            # Calculate predictions for existing data
             predictions = model.predict(X)
             
-            # Calculate confidence intervals for existing data
             residuals = y - predictions
             mse = np.mean(residuals**2)
             confidence_level = 0.95
             t_value = stats.t.ppf((1 + confidence_level) / 2, len(X) - 2)
-            # Standard error for confidence intervals
             X_mean = np.mean(X)
             X_var = np.sum((X - X_mean)**2)
             ci_se = np.sqrt(mse * (1 + 1/len(X) + (X - X_mean)**2/X_var)).flatten()
             ci = t_value * ci_se
             
-            # Forecast for future 14 days
             future_days = np.array(range(len(daily_sales) + 1, len(daily_sales) + 15)).reshape(-1, 1)
             future_predictions = model.predict(future_days)
-            # Standard error for future predictions
             future_ci_se = np.sqrt(mse * (1 + 1/len(X) + (future_days - X_mean)**2/X_var)).flatten()
             future_ci = t_value * future_ci_se
             
-            # Combine data for plotting
             all_days = np.concatenate([X, future_days]).flatten()
             all_predictions = np.concatenate([predictions, future_predictions])
             all_ci_lower = np.concatenate([predictions - ci, future_predictions - future_ci])
             all_ci_upper = np.concatenate([predictions + ci, future_predictions + future_ci])
             
-            # Plotting
             fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
             ax.plot(X.flatten(), y, "o-", label="Actual Sales")
             ax.plot(future_days.flatten(), future_predictions, "o--", color="red", label="Forecast")
@@ -891,7 +902,6 @@ def show_dashboard():
             plt.tight_layout()
             st.pyplot(fig)
             
-            # Display forecast metrics
             weekly_forecast = sum(future_predictions[:7])
             two_week_forecast = sum(future_predictions)
             st.metric("Predicted 7-Day Revenue", f"${weekly_forecast:.2f}")
@@ -935,26 +945,22 @@ def show_dashboard():
     if len(org_orders) >= 5:
         current_date = datetime.datetime.now()
         rfm = org_orders.groupby("receiver_name").agg({
-            "date": lambda x: (current_date - x.max()).days,  # Recency
-            "order_id": "count",                              # Frequency
-            "revenue": "sum"                                  # Monetary
+            "date": lambda x: (current_date - x.max()).days,
+            "order_id": "count",
+            "revenue": "sum"
         }).reset_index()
         rfm.columns = ["receiver_name", "recency", "frequency", "monetary"]
         
-        # Function to assign scores when qcut fails
         def assign_fallback_scores(series, n_bins=4):
             if series.nunique() < n_bins:
-                # If too few unique values, assign scores based on rank or simple thresholds
                 return pd.Series(np.linspace(1, n_bins, len(series)), index=series.index).rank(method='dense').astype(int)
             else:
                 try:
                     return pd.qcut(series, n_bins, labels=[4, 3, 2, 1], duplicates="drop")
                 except:
-                    # Fallback to equal-width bins
                     bins = pd.cut(series, bins=n_bins, labels=[4, 3, 2, 1], include_lowest=True)
                     return bins
                 
-        # Apply scoring with fallback
         try:
             rfm["R_score"] = pd.qcut(rfm["recency"], 4, labels=[4, 3, 2, 1], duplicates="drop")
         except ValueError as e:
@@ -968,7 +974,6 @@ def show_dashboard():
         try:
             rfm["M_score"] = pd.qcut(rfm["monetary"], 4, labels=[1, 2, 3, 4], duplicates="drop")
         except ValueError as e:
-            
             rfm["M_score"] = assign_fallback_scores(rfm["monetary"])
         
         rfm["RFM_score"] = rfm["R_score"].astype(int) + rfm["F_score"].astype(int) + rfm["M_score"].astype(int)
@@ -996,7 +1001,6 @@ def show_dashboard():
             ax.text(v, i, f"{v}", va="center")
         plt.tight_layout()
         st.pyplot(fig)
-        
         
         st.write("**Customer Segments and Names**")
         for segment in rfm["segment"].unique():
@@ -1037,6 +1041,7 @@ def show_dashboard():
         st.write("- **Action**: Offer discounts for bulk orders or target high-volume customers with special promotions.")
     else:
         st.info("No orders available to analyze order sizes.")
+
 def show_add_order():
     st.title("Add New Order")
     
@@ -1185,7 +1190,6 @@ def show_manage_orders():
                                   value=[], 
                                   help="Select a date range to filter orders.")
     
-    
     filtered_orders = org_orders.copy()
     if status_filter != "All":
         filtered_orders = filtered_orders[filtered_orders["status"] == status_filter]
@@ -1247,13 +1251,11 @@ def show_manage_orders():
                         ewaybill_info = ewaybills[ewaybill_key]
                         st.success("E-way bill uploaded")
                         
-                        # Check file accessibility before offering download
                         try:
                             response = requests.get(ewaybill_info["url"], timeout=5)
                             response.raise_for_status()
                             file_data = response.content
                             
-                            # Determine MIME type based on file extension
                             file_ext = ewaybill_info["file_name"].split(".")[-1].lower()
                             mime_types = {
                                 "pdf": "application/pdf",
@@ -1274,14 +1276,12 @@ def show_manage_orders():
                         except requests.RequestException as e:
                             st.warning(f"E-way bill is not accessible ({e}). Use 'Replace E-way Bill' to upload a new file.")
                         
-                        # Add Replace E-way Bill button
                         uploaded_file = st.file_uploader(
                             "Replace E-way Bill",
                             type=["pdf", "jpg", "png"],
                             key=f"replace_ewaybill_{order_id}"
                         )
                         if uploaded_file is not None:
-                            # Delete existing e-way bill from Cloudinary
                             try:
                                 cloudinary.uploader.destroy(ewaybill_info["public_id"], resource_type=ewaybill_info["resource_type"])
                             except Exception as e:
@@ -1289,7 +1289,6 @@ def show_manage_orders():
                                 logger.error(f"Error deleting old e-way bill {ewaybill_info['public_id']}: {e}")
                                 return
                             
-                            # Upload new e-way bill
                             file_data = uploaded_file.read()
                             file_name = uploaded_file.name
                             if upload_ewaybill(order_id, file_data, file_name):
@@ -1325,8 +1324,8 @@ def show_export_reports():
         status_filter = st.selectbox("Status", ["All", "Pending", "Completed"])
     with col2:
         date_range = st.date_input("Date Range", 
-                                  [datetime.datetime.now() - datetime.timedelta(days=30), 
-                                   datetime.datetime.now()])
+                                  value=[], 
+                                  help="Select a date range to filter orders.")
     
     filtered_orders = org_orders.copy()
     if status_filter != "All":
@@ -1403,7 +1402,6 @@ def show_account_settings():
                 users = load_users()
                 if users[st.session_state.current_user]["password"] == current_password:
                     if new_password == confirm_password:
-                        # Password validation: min 6 chars, at least one letter, one digit, one special symbol
                         password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$"
                         if not re.match(password_pattern, new_password):
                             st.error("New password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@$!%*?&).")
@@ -1447,6 +1445,8 @@ def main():
             show_export_reports()
         elif menu == "Account Settings":
             show_account_settings()
+        elif menu == "Admin Panel" and st.session_state.is_admin:
+            show_admin_panel()
 
 if __name__ == "__main__":
     main()

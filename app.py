@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime
-import sqlite3
+from supabase import create_client, Client
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
@@ -31,12 +31,16 @@ if os.path.exists(".env"):
     api_secret = os.getenv("CLOUDINARY_API_SECRET")
     admin_username = os.getenv("ADMIN_USERNAME")
     admin_password = os.getenv("ADMIN_PASSWORD")
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
 else:
     cloud_name = st.secrets["CLOUDINARY_CLOUD_NAME"]
     api_key = st.secrets["CLOUDINARY_API_KEY"]
     api_secret = st.secrets["CLOUDINARY_API_SECRET"]
     admin_username = st.secrets["ADMIN_USERNAME"]
     admin_password = st.secrets["ADMIN_PASSWORD"]
+    supabase_url = st.secrets["SUPABASE_URL"]
+    supabase_key = st.secrets["SUPABASE_KEY"]
 
 # Configure Cloudinary
 cloudinary.config(
@@ -45,84 +49,113 @@ cloudinary.config(
     api_secret=api_secret
 )
 
+# Initialize Supabase client
+supabase: Client = create_client(supabase_url, supabase_key)
+
 # Set page configuration
 st.set_page_config(page_title="Order Management System", layout="wide")
 
 # Database setup
 def init_db():
-    os.makedirs("order_management", exist_ok=True)
-    db_path = "order_management/order_management.db"
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    
-    # Create users table if it doesn't exist
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            password TEXT NOT NULL,
-            organization TEXT NOT NULL
-        )
-    ''')
-    
-    # Check if is_admin column exists
-    c.execute("PRAGMA table_info(users)")
-    columns = [info[1] for info in c.fetchall()]
-    if "is_admin" not in columns:
-        logger.info("Adding is_admin column to users table")
-        c.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
-        logger.info("is_admin column added and set to 0 for existing users")
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS orders (
-            order_id INTEGER,
-            org TEXT,
-            receiver_name TEXT,
-            date TEXT,
-            expected_delivery_date TEXT,
-            product TEXT,
-            description TEXT,
-            quantity INTEGER,
-            price REAL,
-            basic_price REAL,
-            gst REAL,
-            advance_payment REAL,
-            total_amount_with_gst REAL,
-            pending_amount REAL,
-            status TEXT,
-            created_by TEXT,
-            PRIMARY KEY (order_id, org)
-        )
-    ''')
-    
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS ewaybills (
-            order_id INTEGER,
-            org TEXT,
-            public_id TEXT,
-            url TEXT,
-            file_name TEXT,
-            upload_date TEXT,
-            resource_type TEXT,
-            PRIMARY KEY (order_id, org),
-            FOREIGN KEY (order_id, org) REFERENCES orders (order_id, org)
-        )
-    ''')
-    
-    c.execute("PRAGMA table_info(ewaybills)")
-    columns = [info[1] for info in c.fetchall()]
-    if "resource_type" not in columns:
-        logger.info("Adding resource_type column to ewaybills table")
-        c.execute("ALTER TABLE ewaybills ADD COLUMN resource_type TEXT")
-        c.execute('''
-            UPDATE ewaybills SET resource_type = CASE
-                WHEN file_name LIKE '%.pdf' THEN 'raw'
-                ELSE 'image'
-            END
-        ''')
-        logger.info("Populated resource_type for existing e-way bill records")
-    
-    conn.commit()
-    conn.close()
+    # Check if tables exist and provide instructions to create them if they don't
+    try:
+        # Check if users table exists
+        supabase.table("users").select("*").limit(1).execute()
+        logger.info("Users table exists")
+    except Exception as e:
+        logger.error(f"Users table does not exist: {e}")
+        st.error("The 'users' table is missing in Supabase. Please create it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+CREATE TABLE users (
+    username TEXT PRIMARY KEY,
+    password TEXT NOT NULL,
+    organization TEXT NOT NULL,
+    is_admin INTEGER DEFAULT 0
+);
+        """)
+        raise Exception("Users table missing. Please create it and rerun the application.")
+
+    try:
+        # Check if orders table exists
+        supabase.table("orders").select("*").limit(1).execute()
+        logger.info("Orders table exists")
+    except Exception as e:
+        logger.error(f"Orders table does not exist: {e}")
+        st.error("The 'orders' table is missing in Supabase. Please create it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+CREATE TABLE orders (
+    order_id INTEGER,
+    org TEXT,
+    receiver_name TEXT,
+    date TEXT,
+    expected_delivery_date TEXT,
+    product TEXT,
+    description TEXT,
+    quantity INTEGER,
+    price REAL,
+    basic_price REAL,
+    gst REAL,
+    advance_payment REAL,
+    total_amount_with_gst REAL,
+    pending_amount REAL,
+    status TEXT,
+    created_by TEXT,
+    PRIMARY KEY (order_id, org)
+);
+        """)
+        raise Exception("Orders table missing. Please create it and rerun the application.")
+
+    try:
+        # Check if ewaybills table exists
+        supabase.table("ewaybills").select("*").limit(1).execute()
+        logger.info("Ewaybills table exists")
+    except Exception as e:
+        logger.error(f"Ewaybills table does not exist: {e}")
+        st.error("The 'ewaybills' table is missing in Supabase. Please create it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+CREATE TABLE ewaybills (
+    order_id INTEGER,
+    org TEXT,
+    public_id TEXT,
+    url TEXT,
+    file_name TEXT,
+    upload_date TEXT,
+    resource_type TEXT,
+    PRIMARY KEY (order_id, org),
+    FOREIGN KEY (order_id, org) REFERENCES orders (order_id, org)
+);
+        """)
+        raise Exception("Ewaybills table missing. Please create it and rerun the application.")
+
+    # Check and add is_admin column to users if not exists
+    try:
+        # Attempt to select is_admin to check if it exists
+        response = supabase.table("users").select("is_admin").limit(1).execute()
+        logger.info("is_admin column exists in users table")
+    except Exception as e:
+        logger.error(f"is_admin column does not exist in users table: {e}")
+        st.error("The 'is_admin' column is missing in the 'users' table. Please add it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0;
+        """)
+        raise Exception("is_admin column missing. Please add it and rerun the application.")
+
+    # Check and add resource_type column to ewaybills if not exists
+    try:
+        # Attempt to select resource_type to check if it exists
+        response = supabase.table("ewaybills").select("resource_type").limit(1).execute()
+        logger.info("resource_type column exists in ewaybills table")
+    except Exception as e:
+        logger.error(f"resource_type column does not exist in ewaybills table: {e}")
+        st.error("The 'resource_type' column is missing in the 'ewaybills' table. Please add it and populate existing records using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE ewaybills ADD COLUMN resource_type TEXT;
+UPDATE ewaybills SET resource_type = CASE
+    WHEN file_name LIKE '%.pdf' THEN 'raw'
+    ELSE 'image'
+END;
+        """)
+        raise Exception("resource_type column missing. Please add it and rerun the application.")
 
 init_db()
 
@@ -149,71 +182,66 @@ if "show_delete_account" not in st.session_state:
     st.session_state.show_delete_account = False
 
 # Helper functions for database operations
-def get_db_connection():
-    db_path = "order_management/order_management.db"
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
-
 def load_users():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM users")
+    response = supabase.table("users").select("*").execute()
     users = {row["username"]: {
         "password": row["password"],
         "organization": row["organization"],
         "is_admin": row["is_admin"]
-    } for row in c.fetchall()}
-    conn.close()
+    } for row in response.data}
     return users
 
 def save_user(username, password, organization, is_admin=0):
-    conn = get_db_connection()
-    c = conn.cursor()
     try:
-        c.execute("INSERT INTO users (username, password, organization, is_admin) VALUES (?, ?, ?, ?)",
-                  (username, password, organization, is_admin))
-        conn.commit()
+        supabase.table("users").insert({
+            "username": username,
+            "password": password,
+            "organization": organization,
+            "is_admin": is_admin
+        }).execute()
         return True
-    except sqlite3.IntegrityError:
+    except Exception as e:
+        logger.error(f"Error saving user {username}: {e}")
         return False
-    finally:
-        conn.close()
 
 def load_orders():
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM orders", conn)
-    conn.close()
-    return df
+    response = supabase.table("orders").select("*").execute()
+    df = pd.DataFrame(response.data)
+    return df if not df.empty else pd.DataFrame(columns=[
+        "order_id", "org", "receiver_name", "date", "expected_delivery_date",
+        "product", "description", "quantity", "price", "basic_price", "gst",
+        "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
+    ])
 
 def save_orders(df):
-    conn = get_db_connection()
-    df.to_sql("orders", conn, if_exists="replace", index=False)
-    conn.close()
+    # Convert DataFrame to list of dictionaries
+    data = df.to_dict(orient="records")
+    # Delete existing records and insert new ones
+    supabase.table("orders").delete().neq("order_id", -1).execute()  # Clear table
+    if data:
+        supabase.table("orders").insert(data).execute()
 
 def load_ewaybills():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM ewaybills")
+    response = supabase.table("ewaybills").select("*").execute()
     ewaybills = {f"{row['order_id']}_{row['org']}": {
         "public_id": row["public_id"],
         "url": row["url"],
         "file_name": row["file_name"],
         "upload_date": row["upload_date"],
         "resource_type": row["resource_type"] if row["resource_type"] else ("raw" if row["file_name"].lower().endswith(".pdf") else "image")
-    } for row in c.fetchall()}
-    conn.close()
+    } for row in response.data}
     return ewaybills
 
 def save_ewaybill(order_id, org, public_id, url, file_name, upload_date, resource_type):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('''
-        INSERT OR REPLACE INTO ewaybills (order_id, org, public_id, url, file_name, upload_date, resource_type)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (order_id, org, public_id, url, file_name, upload_date, resource_type))
-    conn.commit()
-    conn.close()
+    supabase.table("ewaybills").upsert({
+        "order_id": order_id,
+        "org": org,
+        "public_id": public_id,
+        "url": url,
+        "file_name": file_name,
+        "upload_date": upload_date,
+        "resource_type": resource_type
+    }).execute()
 
 # Authentication functions
 def login(username, password):
@@ -248,13 +276,13 @@ def delete_account(username, by_admin=False):
         return False
 
     org = users[username]["organization"]
-    conn = get_db_connection()
-    c = conn.cursor()
 
-    c.execute("SELECT order_id FROM orders WHERE org = ?", (org,))
-    order_ids = [row["order_id"] for row in c.fetchall()]
+    # Get order IDs for the organization
+    response = supabase.table("orders").select("order_id").eq("org", org).execute()
+    order_ids = [row["order_id"] for row in response.data]
     logger.info(f"Found {len(order_ids)} orders for organization {org}")
 
+    # Delete Cloudinary files
     ewaybills = load_ewaybills()
     deleted_files = 0
     for order_id in order_ids:
@@ -274,22 +302,19 @@ def delete_account(username, by_admin=False):
             except Exception as e:
                 logger.error(f"Error deleting Cloudinary file: {public_id} (resource_type: {resource_type}): {e}")
 
+    # Delete from database
     try:
-        c.execute("DELETE FROM ewaybills WHERE org = ?", (org,))
-        logger.info(f"Deleted {c.rowcount} e-way bills from database for org {org}")
-        c.execute("DELETE FROM orders WHERE org = ?", (org,))
-        logger.info(f"Deleted {c.rowcount} orders from database for org {org}")
-        c.execute("DELETE FROM users WHERE username = ?", (username,))
-        logger.info(f"Deleted user {username} from database")
-        conn.commit()
+        supabase.table("ewaybills").delete().eq("org", org).execute()
+        logger.info(f"Deleted e-way bills for org {org}")
+        supabase.table("orders").delete().eq("org", org).execute()
+        logger.info(f"Deleted orders for org {org}")
+        supabase.table("users").delete().eq("username", username).execute()
+        logger.info(f"Deleted user {username}")
     except Exception as e:
         logger.error(f"Database deletion error: {e}")
-        conn.rollback()
-        conn.close()
         return False
-    finally:
-        conn.close()
 
+    # Verify Cloudinary cleanup
     try:
         for resource_type in ["raw", "image"]:
             resources = cloudinary.api.resources(prefix=f"ewaybill_{org}_", resource_type=resource_type)
@@ -333,27 +358,26 @@ def add_order(receiver_name, date, expected_delivery_date, product, description,
     org_orders = get_org_orders()
     order_id = 1 if org_orders.empty else org_orders["order_id"].max() + 1
     
-    new_order = pd.DataFrame({
-        "order_id": [order_id],
-        "org": [st.session_state.current_org],
-        "receiver_name": [receiver_name],
-        "date": [date],
-        "expected_delivery_date": [expected_delivery_date],
-        "product": [product],
-        "description": [description],
-        "quantity": [quantity],
-        "price": [price],
-        "basic_price": [basic_price],
-        "gst": [gst],
-        "advance_payment": [advance_payment],
-        "total_amount_with_gst": [total_amount_with_gst],
-        "pending_amount": [pending_amount],
-        "status": ["Pending"],
-        "created_by": [st.session_state.current_user]
-    })
+    new_order = {
+        "order_id": order_id,
+        "org": st.session_state.current_org,
+        "receiver_name": receiver_name,
+        "date": str(date),
+        "expected_delivery_date": str(expected_delivery_date),
+        "product": product,
+        "description": description,
+        "quantity": quantity,
+        "price": price,
+        "basic_price": basic_price,
+        "gst": gst,
+        "advance_payment": advance_payment,
+        "total_amount_with_gst": total_amount_with_gst,
+        "pending_amount": pending_amount,
+        "status": "Pending",
+        "created_by": st.session_state.current_user
+    }
     
-    orders = pd.concat([orders, new_order], ignore_index=True)
-    save_orders(orders)
+    supabase.table("orders").insert(new_order).execute()
     
     st.session_state.form_submitted = True
     st.session_state.form_message = "Order added successfully!"
@@ -369,9 +393,7 @@ def export_to_excel(df):
     return output.getvalue()
 
 def update_order_status(order_id, new_status):
-    orders = load_orders()
-    orders.loc[(orders["order_id"] == order_id) & (orders["org"] == st.session_state.current_org), "status"] = new_status
-    save_orders(orders)
+    supabase.table("orders").update({"status": new_status}).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
     logger.info(f"Updated status of order {order_id} to {new_status}")
 
 def upload_ewaybill(order_id, file_data, file_name):
@@ -423,80 +445,66 @@ def upload_ewaybill(order_id, file_data, file_name):
         return False
 
 def delete_order(order_id):
-    orders = load_orders()
-    idx_to_delete = orders[(orders["order_id"] == order_id) & (orders["org"] == st.session_state.current_org)].index
-    
-    if not idx_to_delete.empty:
-        ewaybill_key = f"{order_id}_{st.session_state.current_org}"
-        ewaybills = load_ewaybills()
-        if ewaybill_key in ewaybills:
-            public_id = ewaybills[ewaybill_key]["public_id"]
-            resource_type = ewaybills[ewaybill_key]["resource_type"]
-            try:
-                result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
-                if result.get("result") == "ok":
-                    logger.info(f"Successfully deleted Cloudinary file: {public_id} (resource_type: {resource_type})")
-                elif result.get("result") == "not found":
-                    logger.warning(f"Cloudinary file not found: {public_id} (resource_type: {resource_type})")
-                else:
-                    logger.error(f"Failed to delete Cloudinary file: {public_id} (resource_type: {resource_type}), response: {result}")
-            except Exception as e:
-                logger.error(f"Error deleting Cloudinary file: {public_id} (resource_type: {resource_type}): {e}")
-            
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute("DELETE FROM ewaybills WHERE order_id = ? AND org = ?", (order_id, st.session_state.current_org))
-            logger.info(f"Deleted e-way bill for order {order_id} from database")
-            conn.commit()
-            conn.close()
-        
-        orders = orders.drop(idx_to_delete)
-        save_orders(orders)
-        
+    ewaybill_key = f"{order_id}_{st.session_state.current_org}"
+    ewaybills = load_ewaybills()
+    if ewaybill_key in ewaybills:
+        public_id = ewaybills[ewaybill_key]["public_id"]
+        resource_type = ewaybills[ewaybill_key]["resource_type"]
         try:
-            for resource_type in ["raw", "image"]:
-                resources = cloudinary.api.resources(prefix=f"ewaybill_{st.session_state.current_org}_", resource_type=resource_type)
-                remaining_files = resources.get("resources", [])
-                if remaining_files:
-                    logger.warning(f"Found {len(remaining_files)} remaining Cloudinary {resource_type} files for order {order_id}")
-                else:
-                    logger.info(f"No remaining Cloudinary {resource_type} files for order {order_id}")
+            result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
+            if result.get("result") == "ok":
+                logger.info(f"Successfully deleted Cloudinary file: {public_id} (resource_type: {resource_type})")
+            elif result.get("result") == "not found":
+                logger.warning(f"Cloudinary file not found: {public_id} (resource_type: {resource_type})")
+            else:
+                logger.error(f"Failed to delete Cloudinary file: {public_id} (resource_type: {resource_type}), response: {result}")
         except Exception as e:
-            logger.error(f"Error verifying Cloudinary cleanup for order {order_id}: {e}")
+            logger.error(f"Error deleting Cloudinary file: {public_id} (resource_type: {resource_type}): {e}")
         
-        st.session_state.form_submitted = True
-        st.session_state.form_message = f"Order #{order_id} deleted successfully!"
-        st.session_state.form_status = "success"
-        logger.info(f"Order {order_id} deleted successfully")
-        return True
-    logger.warning(f"Order {order_id} not found for deletion")
-    return False
+        supabase.table("ewaybills").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        logger.info(f"Deleted e-way bill for order {order_id} from database")
+    
+    supabase.table("orders").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+    
+    try:
+        for resource_type in ["raw", "image"]:
+            resources = cloudinary.api.resources(prefix=f"ewaybill_{st.session_state.current_org}_", resource_type=resource_type)
+            remaining_files = resources.get("resources", [])
+            if remaining_files:
+                logger.warning(f"Found {len(remaining_files)} remaining Cloudinary {resource_type} files for order {order_id}")
+            else:
+                logger.info(f"No remaining Cloudinary {resource_type} files for order {order_id}")
+    except Exception as e:
+        logger.error(f"Error verifying Cloudinary cleanup for order {order_id}: {e}")
+    
+    st.session_state.form_submitted = True
+    st.session_state.form_message = f"Order #{order_id} deleted successfully!"
+    st.session_state.form_status = "success"
+    logger.info(f"Order {order_id} deleted successfully")
+    return True
 
 def edit_order(order_id, receiver_name, date, expected_delivery_date, product, description, quantity, price, gst, advance_payment):
-    orders = load_orders()
-    
     basic_price = quantity * price
     gst_amount = basic_price * (gst / 100)
     total_amount_with_gst = basic_price + gst_amount
     pending_amount = total_amount_with_gst - advance_payment
     
-    idx = orders[(orders["order_id"] == order_id) & (orders["org"] == st.session_state.current_org)].index
-    
-    if not idx.empty:
-        orders.loc[idx, "receiver_name"] = receiver_name
-        orders.loc[idx, "date"] = date
-        orders.loc[idx, "expected_delivery_date"] = expected_delivery_date
-        orders.loc[idx, "product"] = product
-        orders.loc[idx, "description"] = description
-        orders.loc[idx, "quantity"] = quantity
-        orders.loc[idx, "price"] = price
-        orders.loc[idx, "basic_price"] = basic_price
-        orders.loc[idx, "gst"] = gst
-        orders.loc[idx, "advance_payment"] = advance_payment
-        orders.loc[idx, "total_amount_with_gst"] = total_amount_with_gst
-        orders.loc[idx, "pending_amount"] = pending_amount
-        
-        save_orders(orders)
+    response = supabase.table("orders").select("*").eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+    if response.data:
+        supabase.table("orders").update({
+            "receiver_name": receiver_name,
+            "date": str(date),
+            "expected_delivery_date": str(expected_delivery_date),
+            "product": product,
+            "description": description,
+            "quantity": quantity,
+            "price": price,
+            "basic_price": basic_price,
+            "gst": gst,
+            "advance_payment": advance_payment,
+            "total_amount_with_gst": total_amount_with_gst,
+            "pending_amount": pending_amount
+        }).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
         logger.info(f"Order {order_id} updated successfully")
         return True
     logger.warning(f"Order {order_id} not found for editing")
@@ -508,14 +516,13 @@ def clear_form_feedback():
     st.session_state.form_status = ""
 
 def get_org_orders():
-    orders = load_orders()
-    if orders.empty:
-        return pd.DataFrame(columns=[
-            "order_id", "org", "receiver_name", "date", "expected_delivery_date",
-            "product", "description", "quantity", "price", "basic_price", "gst",
-            "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
-        ])
-    return orders[orders["org"] == st.session_state.current_org].copy()
+    response = supabase.table("orders").select("*").eq("org", st.session_state.current_org).execute()
+    df = pd.DataFrame(response.data)
+    return df if not df.empty else pd.DataFrame(columns=[
+        "order_id", "org", "receiver_name", "date", "expected_delivery_date",
+        "product", "description", "quantity", "price", "basic_price", "gst",
+        "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
+    ])
 
 # Analytics functions
 def get_total_revenue(df):
@@ -676,6 +683,52 @@ def show_admin_panel():
                 st.error(f"Failed to delete user {selected_user}.")
         else:
             st.error("Please select a user to delete.")
+
+def show_add_order():
+    st.title("Add Order")
+    
+    with st.form("add_order_form"):
+        receiver_name = st.text_input("Receiver Name")
+        date = st.date_input("Order Date", value=datetime.date.today())
+        expected_delivery_date = st.date_input("Expected Delivery Date", value=datetime.date.today())
+        product = st.text_input("Product")
+        description = st.text_area("Description (Optional)")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            quantity = st.number_input("Quantity", min_value=1, value=1)
+        with col2:
+            price = st.number_input("Price per Unit ($)", min_value=0.01, value=0.01, step=0.01)
+        
+        basic_price = quantity * price
+        st.write(f"**Basic Price: ${basic_price:.2f}**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            gst = st.number_input("GST (%)", min_value=0.0, value=0.0, step=0.1)
+        with col2:
+            advance_payment = st.number_input("Advance Payment ($)", min_value=0.0, value=0.0, step=0.01)
+        
+        total_amount_with_gst = basic_price + (basic_price * (gst / 100))
+        pending_amount = total_amount_with_gst - advance_payment
+        
+        st.write(f"**Total Amount with GST: ${total_amount_with_gst:.2f}**")
+        st.write(f"**Pending Amount: ${pending_amount:.2f}**")
+        
+        submitted = st.form_submit_button("Add Order")
+        
+        if submitted:
+            if receiver_name and product:
+                if add_order(receiver_name, date, expected_delivery_date, product, description, 
+                            quantity, price, gst, advance_payment):
+                    st.success("Order added successfully!")
+                    st.rerun()
+            else:
+                st.error("Receiver Name and Product are required fields!")
+    
+    if st.session_state.form_submitted and st.session_state.clear_form:
+        st.session_state.clear_form = False
+        st.rerun()
 
 def show_dashboard():
     st.title("Dashboard")
@@ -1106,72 +1159,6 @@ def show_dashboard():
     else:
         st.info("No orders available to analyze order sizes.")
 
-def show_add_order():
-    st.title("Add New Order")
-    
-    if st.session_state.form_submitted:
-        if st.session_state.form_status == "success":
-            st.success(st.session_state.form_message)
-        elif st.session_state.form_status == "error":
-            st.error(st.session_state.form_message)
-        if st.button("Clear"):
-            clear_form_feedback()
-    
-    default_receiver = ""
-    default_date = datetime.datetime.now()
-    default_delivery_date = datetime.datetime.now() + datetime.timedelta(days=7)
-    default_product = ""
-    default_description = ""
-    default_quantity = 1
-    default_price = 1.00
-    default_gst = 0.0
-    default_advance_payment = 0.0
-    
-    if st.session_state.clear_form:
-        st.session_state.clear_form = False
-    
-    with st.form("add_order_form", clear_on_submit=True):
-        receiver_name = st.text_input("Receiver Name", value=default_receiver)
-        date = st.date_input("Order Date", default_date)
-        expected_delivery_date = st.date_input("Expected Delivery Date", default_delivery_date)
-        product = st.text_input("Product", value=default_product)
-        description = st.text_area("Description (Optional)", value=default_description)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            quantity = st.number_input("Quantity", min_value=1, value=default_quantity)
-        with col2:
-            price = st.number_input("Price per Unit ($)", min_value=0.01, value=default_price, step=0.01)
-        
-        basic_price = quantity * price
-        st.write(f"**Basic Price: ${basic_price:.2f}**")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            gst = st.number_input("GST (%)", min_value=0.0, value=default_gst, step=0.1)
-        with col2:
-            advance_payment = st.number_input("Advance Payment ($)", min_value=0.0, value=default_advance_payment, step=0.01)
-        
-        total_amount_with_gst = basic_price + (basic_price * (gst / 100))
-        pending_amount = total_amount_with_gst - advance_payment
-        
-        st.write(f"**Basic Amount: ${basic_price:.2f}**")
-        st.write(f"**Total Amount with GST: ${total_amount_with_gst:.2f}**")
-        st.write(f"**Pending Amount: ${pending_amount:.2f}**")
-        
-        submitted = st.form_submit_button("Add Order")
-        
-        if submitted:
-            if receiver_name and product:
-                if add_order(receiver_name, date, expected_delivery_date, product, description, 
-                            quantity, price, gst, advance_payment):
-                    st.rerun()
-            else:
-                st.session_state.form_submitted = True
-                st.session_state.form_message = "Please fill in all required fields"
-                st.session_state.form_status = "error"
-                st.rerun()
-
 def show_edit_order_form(order):
     st.title("Edit Order")
     
@@ -1470,12 +1457,7 @@ def show_account_settings():
                         if not re.match(password_pattern, new_password):
                             st.error("New password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@$!%*?&).")
                         else:
-                            conn = get_db_connection()
-                            c = conn.cursor()
-                            c.execute("UPDATE users SET password = ? WHERE username = ?",
-                                      (new_password, st.session_state.current_user))
-                            conn.commit()
-                            conn.close()
+                            supabase.table("users").update({"password": new_password}).eq("username", st.session_state.current_user).execute()
                             st.success("Password changed successfully!")
                     else:
                         st.error("New passwords do not match!")

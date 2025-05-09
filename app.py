@@ -775,6 +775,70 @@ def show_dashboard():
         plt.tight_layout()
         st.pyplot(fig)
     
+    st.subheader("👥 Receiver Analysis")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        receiver_quantity = org_orders.groupby("receiver_name")["quantity"].sum().reset_index()
+        receiver_quantity = receiver_quantity.sort_values("quantity", ascending=False).head(5)
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=receiver_quantity, x="quantity", y="receiver_name", ax=ax, palette="Blues_d")
+        ax.set_xlabel("Total Quantity")
+        ax.set_ylabel("Receiver")
+        ax.set_title("Top Receivers by Quantity")
+        for i, v in enumerate(receiver_quantity["quantity"]):
+            ax.text(v, i, f"{v}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    with col2:
+        org_orders["revenue"] = org_orders.apply(
+            lambda row: row["advance_payment"] + row["pending_amount"] 
+            if row["status"] == "Completed" else row["advance_payment"], 
+            axis=1
+        )
+        receiver_revenue = org_orders.groupby("receiver_name")["revenue"].sum().reset_index()
+        receiver_revenue = receiver_revenue.sort_values("revenue", ascending=False).head(10)
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=receiver_revenue, x="revenue", y="receiver_name", ax=ax, palette="Greens_d")
+        ax.set_xlabel("Total Revenue ($)")
+        ax.set_ylabel("Receiver")
+        ax.set_title("Top Receivers by Revenue")
+        for i, v in enumerate(receiver_revenue["revenue"]):
+            ax.text(v, i, f"${v:.2f}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    # New Product Analysis
+    st.subheader("📦 Product Analysis")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        product_quantity = org_orders.groupby("product")["quantity"].sum().reset_index()
+        product_quantity = product_quantity.sort_values("quantity", ascending=False).head(10)
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=product_quantity, x="quantity", y="product", ax=ax, palette="Oranges_d")
+        ax.set_xlabel("Total Quantity")
+        ax.set_ylabel("Product")
+        ax.set_title("Top Products by Quantity")
+        for i, v in enumerate(product_quantity["quantity"]):
+            ax.text(v, i, f"{v}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    with col2:
+        product_revenue = org_orders.groupby("product")["revenue"].sum().reset_index()
+        product_revenue = product_revenue.sort_values("revenue", ascending=False).head(5)
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=product_revenue, x="revenue", y="product", ax=ax, palette="Purples_d")
+        ax.set_xlabel("Total Revenue ($)")
+        ax.set_ylabel("Product")
+        ax.set_title("Top Products by Revenue")
+        for i, v in enumerate(product_revenue["revenue"]):
+            ax.text(v, i, f"${v:.2f}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
     st.subheader("👥 Advanced Customer Analysis")
     col1, col2 = st.columns(2)
     with col1:

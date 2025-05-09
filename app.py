@@ -19,18 +19,18 @@ from scipy import stats
 import datetime
 import re
 
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file
+# Load environment variables from .env file fro local 
 if os.path.exists(".env"):
     from dotenv import load_dotenv
     load_dotenv()
     cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
     api_key = os.getenv("CLOUDINARY_API_KEY")
     api_secret = os.getenv("CLOUDINARY_API_SECRET")
+    ## fro the secret file for deploy
 else:
     cloud_name = st.secrets["CLOUDINARY_CLOUD_NAME"]
     api_key = st.secrets["CLOUDINARY_API_KEY"]
@@ -118,7 +118,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Initialize database
 init_db()
 
 # Initialize session state
@@ -141,7 +140,6 @@ if "clear_form" not in st.session_state:
 if "show_delete_account" not in st.session_state:
     st.session_state.show_delete_account = False
 
-# Helper functions for database operations
 # Helper functions for database operations
 def get_db_connection():
     db_path = "order_management/order_management.db"
@@ -649,14 +647,6 @@ def show_sidebar():
     return menu
 
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.linear_model import LinearRegression
-from scipy import stats
-import datetime
-
 def show_dashboard():
     st.title("Dashboard")
     
@@ -828,7 +818,7 @@ def show_dashboard():
             "quantity": "sum",
             "pending_amount": "sum"
         }).reset_index()
-        # Sort by month_period to ensure chronological order (past on left, recent on right)
+        # Sort by month_period to ensure chronological order
         monthly_metrics = monthly_metrics.sort_values("month_period")
         # Convert month_period to string for display
         monthly_metrics["month_period"] = monthly_metrics["month_period"].astype(str)

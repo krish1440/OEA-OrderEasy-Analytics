@@ -57,9 +57,8 @@ st.set_page_config(page_title="Order Management System", layout="wide")
 
 # Database setup
 def init_db():
-    # Check if tables exist and provide instructions to create them if they don't
+    # Existing table checks (users, orders, ewaybills) remain unchanged
     try:
-        # Check if users table exists
         supabase.table("users").select("*").limit(1).execute()
         logger.info("Users table exists")
     except Exception as e:
@@ -76,7 +75,6 @@ CREATE TABLE users (
         raise Exception("Users table missing. Please create it and rerun the application.")
 
     try:
-        # Check if orders table exists
         supabase.table("orders").select("*").limit(1).execute()
         logger.info("Orders table exists")
     except Exception as e:
@@ -92,6 +90,7 @@ CREATE TABLE orders (
     product TEXT,
     description TEXT,
     quantity INTEGER,
+    delivered_quantity INTEGER DEFAULT 0,
     price REAL,
     basic_price REAL,
     gst REAL,
@@ -106,7 +105,46 @@ CREATE TABLE orders (
         raise Exception("Orders table missing. Please create it and rerun the application.")
 
     try:
-        # Check if ewaybills table exists
+        supabase.table("deliveries").select("*").limit(1).execute()
+        logger.info("Deliveries table exists")
+    except Exception as e:
+        logger.error(f"Deliveries table does not exist: {e}")
+        st.error("The 'deliveries' table is missing in Supabase. Please create it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+CREATE TABLE deliveries (
+    delivery_id SERIAL PRIMARY KEY,
+    order_id INTEGER,
+    org TEXT,
+    delivery_quantity INTEGER,
+    delivery_date TEXT,
+    total_amount_received REAL,
+    public_id TEXT,
+    url TEXT,
+    file_name TEXT,
+    upload_date TEXT,
+    resource_type TEXT,
+    FOREIGN KEY (order_id, org) REFERENCES orders (order_id, org)
+);
+        """)
+        raise Exception("Deliveries table missing. Please create it and rerun the application.")
+
+    # Check and add total_amount_received column to deliveries if not exists
+    try:
+        response = supabase.table("deliveries").select("total_amount_received").limit(1).execute()
+        logger.info("total_amount_received column exists in deliveries table")
+    except Exception as e:
+        logger.error(f"total_amount_received column does not exist in deliveries table: {e}")
+        st.error("The 'total_amount_received' column is missing in the 'deliveries' table. Please add it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE deliveries ADD COLUMN total_amount_received REAL;
+        """)
+        raise Exception("total_amount_received column missing in deliveries table. Please add it and rerun the application.")
+
+    # Check and remove base_price column from deliveries if exists
+    
+        
+
+    try:
         supabase.table("ewaybills").select("*").limit(1).execute()
         logger.info("Ewaybills table exists")
     except Exception as e:
@@ -129,7 +167,6 @@ CREATE TABLE ewaybills (
 
     # Check and add is_admin column to users if not exists
     try:
-        # Attempt to select is_admin to check if it exists
         response = supabase.table("users").select("is_admin").limit(1).execute()
         logger.info("is_admin column exists in users table")
     except Exception as e:
@@ -140,9 +177,20 @@ ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0;
         """)
         raise Exception("is_admin column missing. Please add it and rerun the application.")
 
+    # Check and add delivered_quantity column to orders if not exists
+    try:
+        response = supabase.table("orders").select("delivered_quantity").limit(1).execute()
+        logger.info("delivered_quantity column exists in orders table")
+    except Exception as e:
+        logger.error(f"delivered_quantity column does not exist in orders table: {e}")
+        st.error("The 'delivered_quantity' column is missing in the 'orders' table. Please add it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE orders ADD COLUMN delivered_quantity INTEGER DEFAULT 0;
+        """)
+        raise Exception("delivered_quantity column missing. Please add it and rerun the application.")
+
     # Check and add resource_type column to ewaybills if not exists
     try:
-        # Attempt to select resource_type to check if it exists
         response = supabase.table("ewaybills").select("resource_type").limit(1).execute()
         logger.info("resource_type column exists in ewaybills table")
     except Exception as e:
@@ -156,6 +204,22 @@ UPDATE ewaybills SET resource_type = CASE
 END;
         """)
         raise Exception("resource_type column missing. Please add it and rerun the application.")
+
+    # Check and add resource_type column to deliveries if not exists
+    try:
+        response = supabase.table("deliveries").select("resource_type").limit(1).execute()
+        logger.info("resource_type column exists in deliveries table")
+    except Exception as e:
+        logger.error(f"resource_type column does not exist in deliveries table: {e}")
+        st.error("The 'resource_type' column is missing in the 'deliveries' table. Please add it and populate existing records using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE deliveries ADD COLUMN resource_type TEXT;
+UPDATE deliveries SET resource_type = CASE
+    WHEN file_name LIKE '%.pdf' THEN 'raw'
+    ELSE 'image'
+END;
+        """)
+        raise Exception("resource_type column missing in deliveries table. Please add it and rerun the application.")
 
 init_db()
 
@@ -265,6 +329,73 @@ def signup(username, password, organization):
     
     return save_user(username, password, organization)
 
+def load_deliveries(order_id=None, org=None):
+    query = supabase.table("deliveries").select("*")
+    if order_id is not None and org is not None:
+        query = query.eq("order_id", order_id).eq("org", org)
+    response = query.execute()
+    df = pd.DataFrame(response.data)
+    return df if not df.empty else pd.DataFrame(columns=[
+        "delivery_id", "order_id", "org", "delivery_quantity", "delivery_date",
+        "public_id", "url", "file_name", "upload_date", "resource_type"
+    ])
+
+
+def delete_delivery(order_id, delivery_id):
+    try:
+        # Get delivery details
+        delivery_response = supabase.table("deliveries").select("*").eq("order_id", order_id).eq("delivery_id", delivery_id).eq("org", st.session_state.current_org).execute()
+        if not delivery_response.data:
+            logger.error(f"Delivery {delivery_id} for order {order_id} not found")
+            return False, "Delivery not found"
+
+        delivery = delivery_response.data[0]
+        delivery_quantity = delivery["delivery_quantity"]
+        amount_received = delivery["total_amount_received"]
+        public_id = delivery["public_id"]
+        resource_type = delivery["resource_type"]
+
+        # Delete Cloudinary file if exists
+        if public_id:
+            try:
+                result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
+                if result.get("result") == "ok":
+                    logger.info(f"Deleted Cloudinary file: {public_id} (resource_type: {resource_type})")
+                else:
+                    logger.warning(f"Cloudinary file deletion issue: {public_id}, result: {result}")
+            except Exception as e:
+                logger.error(f"Error deleting Cloudinary file {public_id}: {e}")
+
+        # Delete delivery from database
+        supabase.table("deliveries").delete().eq("order_id", order_id).eq("delivery_id", delivery_id).eq("org", st.session_state.current_org).execute()
+
+        # Update order's delivered_quantity and pending_amount
+        order_response = supabase.table("orders").select(
+            "delivered_quantity, quantity, status, pending_amount, total_amount_with_gst, advance_payment"
+        ).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        if order_response.data:
+            order = order_response.data[0]
+            new_delivered = max(0, order["delivered_quantity"] - delivery_quantity)
+            # Recalculate pending amount
+            deliveries = load_deliveries(order_id, st.session_state.current_org)
+            remaining_total_received = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+            new_pending = order["total_amount_with_gst"] - order["advance_payment"] - remaining_total_received
+            if new_pending < 0:
+                new_pending = 0  # Prevent negative pending amount
+            updates = {
+                "delivered_quantity": new_delivered,
+                "pending_amount": new_pending
+            }
+            if new_delivered < order["quantity"] and order["status"] == "Completed":
+                updates["status"] = "Pending"
+            supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+            logger.info(f"Updated order {order_id}: delivered_quantity={new_delivered}, pending_amount={new_pending}, status={updates.get('status', order['status'])}")
+
+        logger.info(f"Deleted delivery #{delivery_id} for order {order_id}")
+        return True, "Delivery deleted successfully"
+    except Exception as e:
+        logger.error(f"Error deleting delivery {delivery_id} for order {order_id}: {e}")
+        return False, f"Error deleting delivery: {str(e)}"
 def delete_account(username, by_admin=False):
     users = load_users()
     if username not in users:
@@ -282,28 +413,26 @@ def delete_account(username, by_admin=False):
     order_ids = [row["order_id"] for row in response.data]
     logger.info(f"Found {len(order_ids)} orders for organization {org}")
 
-    # Delete Cloudinary files
-    ewaybills = load_ewaybills()
+    # Delete Cloudinary files from deliveries
     deleted_files = 0
     for order_id in order_ids:
-        ewaybill_key = f"{order_id}_{org}"
-        if ewaybill_key in ewaybills:
-            public_id = ewaybills[ewaybill_key]["public_id"]
-            resource_type = ewaybills[ewaybill_key]["resource_type"]
-            try:
-                result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
-                if result.get("result") == "ok":
-                    logger.info(f"Successfully deleted Cloudinary file: {public_id} (resource_type: {resource_type})")
-                    deleted_files += 1
-                elif result.get("result") == "not found":
-                    logger.warning(f"Cloudinary file not found: {public_id} (resource_type: {resource_type})")
-                else:
-                    logger.error(f"Failed to delete Cloudinary file: {public_id} (resource_type: {resource_type}), response: {result}")
-            except Exception as e:
-                logger.error(f"Error deleting Cloudinary file: {public_id} (resource_type: {resource_type}): {e}")
+        deliveries = load_deliveries(order_id, org)
+        for _, delivery in deliveries.iterrows():
+            if delivery["public_id"]:
+                try:
+                    result = cloudinary.uploader.destroy(delivery["public_id"], resource_type=delivery["resource_type"])
+                    if result.get("result") == "ok":
+                        logger.info(f"Deleted Cloudinary file: {delivery['public_id']} (resource_type: {delivery['resource_type']})")
+                        deleted_files += 1
+                    else:
+                        logger.warning(f"Cloudinary file deletion issue: {delivery['public_id']}, result: {result}")
+                except Exception as e:
+                    logger.error(f"Error deleting Cloudinary file {delivery['public_id']}: {e}")
 
     # Delete from database
     try:
+        supabase.table("deliveries").delete().eq("org", org).execute()
+        logger.info(f"Deleted deliveries for org {org}")
         supabase.table("ewaybills").delete().eq("org", org).execute()
         logger.info(f"Deleted e-way bills for org {org}")
         supabase.table("orders").delete().eq("org", org).execute()
@@ -317,7 +446,7 @@ def delete_account(username, by_admin=False):
     # Verify Cloudinary cleanup
     try:
         for resource_type in ["raw", "image"]:
-            resources = cloudinary.api.resources(prefix=f"ewaybill_{org}_", resource_type=resource_type)
+            resources = cloudinary.api.resources(prefix=f"delivery_{org}_", resource_type=resource_type)
             remaining_files = resources.get("resources", [])
             if remaining_files:
                 logger.warning(f"Found {len(remaining_files)} remaining Cloudinary {resource_type} files for org {org}: {[r['public_id'] for r in remaining_files]}")
@@ -345,8 +474,6 @@ def logout():
     st.session_state.form_status = ""
     st.session_state.editing_order = None
     st.session_state.show_delete_account = False
-
-# Order management functions
 def add_order(receiver_name, date, expected_delivery_date, product, description, quantity, price, gst, advance_payment):
     orders = load_orders()
     
@@ -385,6 +512,123 @@ def add_order(receiver_name, date, expected_delivery_date, product, description,
     st.session_state.clear_form = True
     logger.info(f"Added order {order_id} for org {st.session_state.current_org}")
     return True
+# Order management functions
+def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_received, file_data=None, file_name=None):
+    try:
+        # Fetch order details including advance_payment and pending_amount
+        order_response = supabase.table("orders").select(
+            "quantity, delivered_quantity, status, pending_amount, total_amount_with_gst, advance_payment"
+        ).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        if not order_response.data:
+            logger.error(f"Order {order_id} not found")
+            return False, "Order not found"
+
+        order = order_response.data[0]
+        total_quantity = order["quantity"]
+        current_delivered = order["delivered_quantity"]
+        advance_payment = order["advance_payment"]
+        order_total_amount = order["total_amount_with_gst"]
+
+        new_delivered = current_delivered + delivery_quantity
+
+        if new_delivered > total_quantity:
+            logger.error(f"Delivery quantity exceeds order quantity: {new_delivered} > {total_quantity}")
+            return False, f"Delivery quantity ({delivery_quantity}) would exceed order quantity ({total_quantity - current_delivered})."
+
+        # Validate total_amount_received
+        if total_amount_received < 0:
+            logger.error(f"Total amount received cannot be negative: {total_amount_received}")
+            return False, f"Total amount received cannot be negative."
+
+        # Calculate current total received from previous deliveries
+        deliveries = load_deliveries(order_id, st.session_state.current_org)
+        previous_total_received = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+
+        # Calculate effective pending amount before this delivery
+        effective_pending = order_total_amount - advance_payment - previous_total_received
+        if effective_pending < 0:
+            effective_pending = 0  # Prevent negative pending amount due to overpayment
+
+        # Check if this delivery's amount exceeds the effective pending amount
+        if total_amount_received > effective_pending:
+            logger.error(f"Total amount received ({total_amount_received}) exceeds effective pending amount ({effective_pending})")
+            return False, f"Total amount received (${total_amount_received:.2f}) exceeds remaining pending amount (${effective_pending:.2f})."
+
+        # Update pending amount
+        new_pending = effective_pending - total_amount_received
+
+        # Calculate next delivery_id for this order
+        max_delivery_id_response = supabase.table("deliveries").select("delivery_id").eq("order_id", order_id).eq("org", st.session_state.current_org).order("delivery_id", desc=True).limit(1).execute()
+        next_delivery_id = 1 if not max_delivery_id_response.data else max_delivery_id_response.data[0]["delivery_id"] + 1
+
+        public_id = None
+        url = None
+        resource_type = None
+        upload_date = None
+
+        if file_data and file_name:
+            file_ext = file_name.split(".")[-1].lower()
+            resource_type = "raw" if file_ext == "pdf" else "image"
+            public_id = f"delivery_{st.session_state.current_org}_{order_id}_{uuid.uuid4()}"
+            
+            upload_result = cloudinary.uploader.upload(
+                file_data,
+                public_id=public_id,
+                resource_type=resource_type,
+                access_mode="public",
+                type="upload"
+            )
+            
+            resource_info = cloudinary.api.resource(public_id, resource_type=resource_type)
+            if resource_info.get("access_mode") != "public":
+                cloudinary.uploader.explicit(
+                    public_id,
+                    type="upload",
+                    resource_type=resource_type,
+                    access_mode="public"
+                )
+            
+            url = upload_result["secure_url"]
+            upload_date = datetime.datetime.now().isoformat()
+
+        # Insert delivery with payment details
+        delivery_data = {
+            "order_id": order_id,
+            "delivery_id": next_delivery_id,
+            "org": st.session_state.current_org,
+            "delivery_quantity": int(delivery_quantity),
+            "delivery_date": str(delivery_date),
+            "total_amount_received": float(total_amount_received),
+            "public_id": public_id,
+            "url": url,
+            "file_name": file_name,
+            "upload_date": upload_date,
+            "resource_type": resource_type
+        }
+        supabase.table("deliveries").insert(delivery_data).execute()
+
+        # Update order's delivered_quantity and pending_amount
+        updates = {
+            "delivered_quantity": new_delivered,
+            "pending_amount": new_pending
+        }
+        if new_delivered >= total_quantity and order["status"] != "Completed":
+            updates["status"] = "Completed"
+            # Ensure pending amount is zero when order is completed
+            updates["pending_amount"] = 0.0
+            # Verify total amount received (including advance) matches order total
+            total_received = previous_total_received + total_amount_received + advance_payment
+            if abs(total_received - order_total_amount) > 0.01:  # Allow small floating-point differences
+                logger.error(f"Total amount received ({total_received}) does not match order total ({order_total_amount})")
+                return False, f"Total amount received (${total_received:.2f}) does not match order total (${order_total_amount:.2f})."
+
+        supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+
+        logger.info(f"Added delivery #{next_delivery_id} of {delivery_quantity} units for order {order_id}, amount received: ${total_amount_received:.2f}, new pending: ${new_pending:.2f}")
+        return True, "Delivery added successfully"
+    except Exception as e:
+        logger.error(f"Error adding delivery for order {order_id}: {e}")
+        return False, f"Error adding delivery: {str(e)}"
 def export_to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -444,6 +688,21 @@ def upload_ewaybill(order_id, file_data, file_name):
         return False
 
 def delete_order(order_id):
+    # Delete all deliveries and their Cloudinary files
+    deliveries = load_deliveries(order_id, st.session_state.current_org)
+    for _, delivery in deliveries.iterrows():
+        success, message = delete_delivery(delivery["delivery_id"], order_id)
+        if not success:
+            logger.error(f"Failed to delete delivery {delivery['delivery_id']}: {message}")
+            st.session_state.form_submitted = True
+            st.session_state.form_message = f"Error deleting order: {message}"
+            st.session_state.form_status = "error"
+            return False
+    
+    # Delete order
+    supabase.table("orders").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+    
+    # Delete legacy e-way bill if exists
     ewaybill_key = f"{order_id}_{st.session_state.current_org}"
     ewaybills = load_ewaybills()
     if ewaybill_key in ewaybills:
@@ -452,29 +711,12 @@ def delete_order(order_id):
         try:
             result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
             if result.get("result") == "ok":
-                logger.info(f"Successfully deleted Cloudinary file: {public_id} (resource_type: {resource_type})")
-            elif result.get("result") == "not found":
-                logger.warning(f"Cloudinary file not found: {public_id} (resource_type: {resource_type})")
+                logger.info(f"Deleted legacy Cloudinary file: {public_id} (resource_type: {resource_type})")
             else:
-                logger.error(f"Failed to delete Cloudinary file: {public_id} (resource_type: {resource_type}), response: {result}")
+                logger.warning(f"Legacy Cloudinary file deletion issue: {public_id}, result: {result}")
         except Exception as e:
-            logger.error(f"Error deleting Cloudinary file: {public_id} (resource_type: {resource_type}): {e}")
-        
+            logger.error(f"Error deleting legacy Cloudinary file {public_id}: {e}")
         supabase.table("ewaybills").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
-        logger.info(f"Deleted e-way bill for order {order_id} from database")
-    
-    supabase.table("orders").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
-    
-    try:
-        for resource_type in ["raw", "image"]:
-            resources = cloudinary.api.resources(prefix=f"ewaybill_{st.session_state.current_org}_", resource_type=resource_type)
-            remaining_files = resources.get("resources", [])
-            if remaining_files:
-                logger.warning(f"Found {len(remaining_files)} remaining Cloudinary {resource_type} files for order {order_id}")
-            else:
-                logger.info(f"No remaining Cloudinary {resource_type} files for order {order_id}")
-    except Exception as e:
-        logger.error(f"Error verifying Cloudinary cleanup for order {order_id}: {e}")
     
     st.session_state.form_submitted = True
     st.session_state.form_message = f"Order #{order_id} deleted successfully!"
@@ -483,6 +725,14 @@ def delete_order(order_id):
     return True
 
 def edit_order(order_id, receiver_name, date, expected_delivery_date, product, description, quantity, price, gst, advance_payment):
+    # Check if new quantity is valid
+    order_response = supabase.table("orders").select("delivered_quantity").eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+    if order_response.data:
+        delivered_quantity = order_response.data[0]["delivered_quantity"]
+        if quantity < delivered_quantity:
+            logger.error(f"Cannot reduce quantity below delivered amount: {quantity} < {delivered_quantity}")
+            return False
+    
     basic_price = quantity * price
     gst_amount = basic_price * (gst / 100)
     total_amount_with_gst = basic_price + gst_amount
@@ -508,7 +758,6 @@ def edit_order(order_id, receiver_name, date, expected_delivery_date, product, d
         return True
     logger.warning(f"Order {order_id} not found for editing")
     return False
-
 def clear_form_feedback():
     st.session_state.form_submitted = False
     st.session_state.form_message = ""
@@ -524,15 +773,17 @@ def get_org_orders():
     ])
 
 # Analytics functions
+# Analytics functions
 def get_total_revenue(df):
     if df.empty:
         return 0
-    df["revenue"] = df.apply(
-        lambda row: row["advance_payment"] + row["pending_amount"] 
-        if row["status"] == "Completed" else row["advance_payment"], 
-        axis=1
-    )
-    return df["revenue"].sum()
+    # Calculate total revenue as advance_payment + sum of total_amount_received from deliveries
+    revenue = 0
+    for _, row in df.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        revenue += row["advance_payment"] + delivery_amount
+    return revenue
 
 def get_monthly_summary(df):
     if df.empty:
@@ -544,34 +795,35 @@ def get_monthly_summary(df):
     df["date"] = pd.to_datetime(df["date"])
     monthly_df = df[(df["date"].dt.month == current_month) & (df["date"].dt.year == current_year)]
     
-    monthly_df["revenue"] = monthly_df.apply(
-        lambda row: row["advance_payment"] + row["pending_amount"] 
-        if row["status"] == "Completed" else row["advance_payment"], 
-        axis=1
-    )
+    # Calculate revenue for the current month
+    monthly_revenue = 0
+    monthly_order_count = len(monthly_df)
+    for _, row in monthly_df.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        monthly_revenue += row["advance_payment"] + delivery_amount
     
     result = {
-        "total": len(monthly_df),
+        "total": monthly_order_count,
         "completed": len(monthly_df[monthly_df["status"] == "Completed"]),
         "pending": len(monthly_df[monthly_df["status"] == "Pending"]),
-        "revenue": monthly_df["revenue"].sum() if not monthly_df.empty else 0,
-        "avg_order_value": monthly_df["revenue"].mean() if not monthly_df.empty else 0
+        "revenue": monthly_revenue,
+        "avg_order_value": monthly_revenue / monthly_order_count if monthly_order_count > 0 else 0
     }
     
+    # Calculate revenue for the previous month
     last_month = current_month - 1 if current_month > 1 else 12
     last_month_year = current_year if current_month > 1 else current_year - 1
     last_month_df = df[(df["date"].dt.month == last_month) & (df["date"].dt.year == last_month_year)]
     
-    last_month_df["revenue"] = last_month_df.apply(
-        lambda row: row["advance_payment"] + row["pending_amount"] 
-        if row["status"] == "Completed" else row["advance_payment"], 
-        axis=1
-    )
+    last_month_revenue = 0
+    for _, row in last_month_df.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        last_month_revenue += row["advance_payment"] + delivery_amount
     
-    if not last_month_df.empty and not monthly_df.empty:
-        last_month_revenue = last_month_df["revenue"].sum()
-        current_month_revenue = monthly_df["revenue"].sum()
-        result["mom_growth"] = ((current_month_revenue - last_month_revenue) / last_month_revenue * 100) if last_month_revenue > 0 else 100
+    if last_month_revenue > 0 and monthly_revenue > 0:
+        result["mom_growth"] = ((monthly_revenue - last_month_revenue) / last_month_revenue * 100)
     else:
         result["mom_growth"] = 0
     
@@ -755,7 +1007,8 @@ def show_dashboard():
     with col3:
         st.metric("Pending Orders", len(org_orders[org_orders["status"] == "Pending"]))
     with col4:
-        st.metric("Total Pending Amount", f"${org_orders[org_orders['status'] == 'Pending']['pending_amount'].sum():.2f}")
+        total_delivered = org_orders["delivered_quantity"].sum()
+        st.metric("Total Units Delivered", total_delivered)
     
     st.subheader("Current Month Metrics")
     current_month = datetime.datetime.now().month
@@ -769,7 +1022,8 @@ def show_dashboard():
     with col3:
         st.metric("Pending Orders", len(monthly_df[monthly_df["status"] == "Pending"]))
     with col4:
-        st.metric("Total Pending Amount", f"${monthly_df[monthly_df['status'] == 'Pending']['pending_amount'].sum():.2f}")
+        monthly_delivered = monthly_df["delivered_quantity"].sum()
+        st.metric("Units Delivered", monthly_delivered)
     
     st.subheader("📦 Quantity Analysis")
     org_orders["month"] = pd.to_datetime(org_orders["date"]).dt.strftime("%b %Y")
@@ -789,11 +1043,13 @@ def show_dashboard():
     
     st.subheader("📈 Revenue and Financial Analysis")
     org_orders["month"] = pd.to_datetime(org_orders["date"]).dt.strftime("%b %Y")
-    org_orders["revenue"] = org_orders.apply(
-        lambda row: row["advance_payment"] + row["pending_amount"] 
-        if row["status"] == "Completed" else row["advance_payment"], 
-        axis=1
-    )
+    # Calculate revenue as advance_payment + total_amount_received from deliveries
+    org_orders["revenue"] = 0.0
+    for idx, row in org_orders.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        org_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
+    
     monthly_revenue = org_orders.groupby("month")["revenue"].sum().reset_index()
     monthly_revenue['month_dt'] = pd.to_datetime(monthly_revenue['month'], format="%b %Y")
     monthly_revenue = monthly_revenue.sort_values('month_dt').drop(columns='month_dt')
@@ -844,11 +1100,6 @@ def show_dashboard():
         st.pyplot(fig)
     
     with col2:
-        org_orders["revenue"] = org_orders.apply(
-            lambda row: row["advance_payment"] + row["pending_amount"] 
-            if row["status"] == "Completed" else row["advance_payment"], 
-            axis=1
-        )
         receiver_revenue = org_orders.groupby("receiver_name")["revenue"].sum().reset_index()
         receiver_revenue = receiver_revenue.sort_values("revenue", ascending=False).head(10)
         fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
@@ -861,7 +1112,6 @@ def show_dashboard():
         plt.tight_layout()
         st.pyplot(fig)
     
-    # New Product Analysis
     st.subheader("📦 Product Analysis")
     col1, col2 = st.columns(2)
     
@@ -1258,7 +1508,14 @@ def show_manage_orders():
         return
     
     for _, order in filtered_orders.iterrows():
-        with st.expander(f"Order #{order['order_id']} - {order['product']} - {order['status']}"):
+        # Calculate pending quantity
+        pending_quantity = order["quantity"] - order["delivered_quantity"]
+        # Update expander label
+        expander_label = (
+            f"Order #{order['order_id']} - {order['product']} - {order['status']} -"
+            f"(Pending Quantity: {pending_quantity}, Pending Amount: ${order['pending_amount']:.2f})"
+        )
+        with st.expander(expander_label):
             col1, col2 = st.columns([3, 1])
             
             with col1:
@@ -1268,7 +1525,9 @@ def show_manage_orders():
                 st.write(f"**Product:** {order['product']}")
                 if order["description"]:
                     st.write(f"**Description:** {order['description']}")
-                st.write(f"**Quantity:** {order['quantity']}")
+                st.write(f"**Quantity Ordered:** {order['quantity']}")
+                st.write(f"**Quantity Delivered:** {order['delivered_quantity']}")
+                st.write(f"**Pending Quantity:** {pending_quantity}")
                 st.write(f"**Price per Unit:** ${order['price']:.2f}")
                 st.write(f"**Basic Price:** ${order['basic_price']:.2f}")
                 st.write(f"**GST (%):** {order['gst']:.1f}%")
@@ -1293,71 +1552,94 @@ def show_manage_orders():
                         st.session_state.form_message = "Order marked as completed!"
                         st.session_state.form_status = "success"
                         st.rerun()
-                
-                if order["status"] == "Completed":
-                    ewaybill_key = f"{order_id}_{st.session_state.current_org}"
-                    ewaybills = load_ewaybills()
-                    if ewaybill_key in ewaybills:
-                        ewaybill_info = ewaybills[ewaybill_key]
-                        st.success("E-way bill uploaded")
-                        
-                        try:
-                            response = requests.get(ewaybill_info["url"], timeout=5)
-                            response.raise_for_status()
-                            file_data = response.content
-                            
-                            file_ext = ewaybill_info["file_name"].split(".")[-1].lower()
-                            mime_types = {
-                                "pdf": "application/pdf",
-                                "jpg": "image/jpeg",
-                                "jpeg": "image/jpeg",
-                                "png": "image/png"
-                            }
-                            mime = mime_types.get(file_ext, "application/octet-stream")
-                            
-                            st.download_button(
-                                label="Download E-way Bill",
-                                data=file_data,
-                                file_name=f"ewaybill_order_{order_id}.{file_ext}",
-                                mime=mime,
-                                key=f"download_ewaybill_{order_id}"
-                            )
-                            
-                        except requests.RequestException as e:
-                            st.warning(f"E-way bill is not accessible ({e}). Use 'Replace E-way Bill' to upload a new file.")
-                        
-                        uploaded_file = st.file_uploader(
-                            "Replace E-way Bill",
-                            type=["pdf", "jpg", "png"],
-                            key=f"replace_ewaybill_{order_id}"
-                        )
-                        if uploaded_file is not None:
+            
+            # Delivery Management
+            st.subheader("Deliveries")
+            deliveries = load_deliveries(order_id, st.session_state.current_org)
+            if deliveries.empty:
+                st.info("No deliveries recorded for this order.")
+            else:
+                for _, delivery in deliveries.iterrows():
+                    with st.container():
+                        st.write(f"**Delivery ID:** {delivery['delivery_id']}")
+                        st.write(f"**Quantity:** {delivery['delivery_quantity']}")
+                        st.write(f"**Date:** {delivery['delivery_date']}")
+                        st.write(f"**Total Amount Received:** ${delivery['total_amount_received']:.2f}")
+                        if delivery["url"]:
                             try:
-                                cloudinary.uploader.destroy(ewaybill_info["public_id"], resource_type=ewaybill_info["resource_type"])
-                            except Exception as e:
-                                st.error(f"Error deleting old e-way bill: {e}")
-                                logger.error(f"Error deleting old e-way bill {ewaybill_info['public_id']}: {e}")
-                                return
-                            
-                            file_data = uploaded_file.read()
-                            file_name = uploaded_file.name
-                            if upload_ewaybill(order_id, file_data, file_name):
-                                st.success("E-way bill replaced successfully")
-                                st.rerun()
+                                response = requests.get(delivery["url"], timeout=5)
+                                response.raise_for_status()
+                                file_data = response.content
+                                file_ext = delivery["file_name"].split(".")[-1].lower()
+                                mime_types = {
+                                    "pdf": "application/pdf",
+                                    "jpg": "image/jpeg",
+                                    "jpeg": "image/jpeg",
+                                    "png": "image/png"
+                                }
+                                mime = mime_types.get(file_ext, "application/octet-stream")
+                                st.download_button(
+                                    label="Download E-way Bill",
+                                    data=file_data,
+                                    file_name=f"ewaybill_delivery_{delivery['delivery_id']}.{file_ext}",
+                                    mime=mime,
+                                    key=f"download_delivery_ewaybill_{order_id}_{delivery['delivery_id']}"
+                                )
+                            except requests.RequestException as e:
+                                st.warning(f"E-way bill not accessible ({e}).")
                         
-                    else:
-                        uploaded_file = st.file_uploader(
-                            "Upload E-way Bill", 
-                            type=["pdf", "jpg", "png"],
-                            key=f"ewaybill_{order_id}"
+                        if st.button("Delete Delivery", key=f"delete_delivery_{order_id}_{delivery['delivery_id']}"):
+                            success, message = delete_delivery(order_id, delivery["delivery_id"])
+                            if success:
+                                st.session_state.form_submitted = True
+                                st.session_state.form_message = message
+                                st.session_state.form_status = "success"
+                            else:
+                                st.session_state.form_submitted = True
+                                st.session_state.form_message = message
+                                st.session_state.form_status = "error"
+                            st.rerun()
+                        st.markdown("---")
+            
+            if order["delivered_quantity"] < order["quantity"]:
+                with st.form(f"add_delivery_form_{order_id}"):
+                    delivery_quantity = st.number_input(
+                        "Delivery Quantity",
+                        min_value=1,
+                        max_value=order["quantity"] - order["delivered_quantity"],
+                        value=1
+                    )
+                    delivery_date = st.date_input("Delivery Date", value=datetime.date.today())
+                    total_amount_received = st.number_input(
+                        "Total Amount Received ($)",
+                        min_value=0.0,
+                        value=0.0,
+                        step=0.01,
+                        help="Enter the amount received for this delivery."
+                    )
+                    uploaded_file = st.file_uploader(
+                        "Upload E-way Bill",
+                        type=["pdf", "jpg", "png"],
+                        key=f"delivery_ewaybill_{order_id}"
+                    )
+                    
+                    submitted = st.form_submit_button("Add Delivery")
+                    
+                    if submitted:
+                        file_data = uploaded_file.read() if uploaded_file else None
+                        file_name = uploaded_file.name if uploaded_file else None
+                        success, message = add_delivery(
+                            order_id, delivery_quantity, delivery_date, total_amount_received, file_data, file_name
                         )
-                        if uploaded_file is not None:
-                            file_data = uploaded_file.read()
-                            file_name = uploaded_file.name
-                            if upload_ewaybill(order_id, file_data, file_name):
-                                st.success("E-way bill uploaded successfully")
-                                st.rerun()
-
+                        if success:
+                            st.session_state.form_submitted = True
+                            st.session_state.form_message = message
+                            st.session_state.form_status = "success"
+                        else:
+                            st.session_state.form_submitted = True
+                            st.session_state.form_message = message
+                            st.session_state.form_status = "error"
+                        st.rerun()
 def show_export_reports():
     st.title("Export Reports")
     
@@ -1389,6 +1671,13 @@ def show_export_reports():
             (filtered_orders["date"] <= pd.Timestamp(end_date))
         ]
     
+    # Add revenue column to filtered_orders
+    filtered_orders["revenue"] = 0.0
+    for idx, row in filtered_orders.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        filtered_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
+    
     st.dataframe(filtered_orders)
     
     col1, col2 = st.columns(2)
@@ -1410,11 +1699,17 @@ def show_export_reports():
     if not org_orders.empty:
         org_orders["date"] = pd.to_datetime(org_orders["date"])
         org_orders["month"] = org_orders["date"].dt.strftime("%Y-%m")
-        monthly_revenue = org_orders[org_orders["status"] == "Completed"].groupby("month").agg({
-            "basic_price": "sum",
-            "total_amount_with_gst": "sum"
+        # Calculate revenue for each order
+        org_orders["revenue"] = 0.0
+        for idx, row in org_orders.iterrows():
+            deliveries = load_deliveries(row["order_id"], row["org"])
+            delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+            org_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
+        
+        monthly_revenue = org_orders.groupby("month").agg({
+            "revenue": "sum"
         }).reset_index()
-        monthly_revenue.columns = ["Month", "Base Price", "Total Price with GST"]
+        monthly_revenue.columns = ["Month", "Total Revenue"]
         
         if not monthly_revenue.empty:
             st.dataframe(monthly_revenue)
@@ -1429,7 +1724,7 @@ def show_export_reports():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         else:
-            st.info("No completed orders to calculate revenue.")
+            st.info("No orders to calculate revenue.")
     else:
         st.info("No orders available to generate revenue summary.")
 

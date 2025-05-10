@@ -56,14 +56,8 @@ supabase: Client = create_client(supabase_url, supabase_key)
 st.set_page_config(page_title="Order Management System", layout="wide")
 
 # Database setup
-import logging
-import streamlit as st
-from supabase import Client
-
-logger = logging.getLogger(__name__)
-
-def init_db(supabase: Client):
-    # Check and create users table
+def init_db():
+    # Existing table checks (users, orders, ewaybills) remain unchanged
     try:
         supabase.table("users").select("*").limit(1).execute()
         logger.info("Users table exists")
@@ -80,7 +74,6 @@ CREATE TABLE users (
         """)
         raise Exception("Users table missing. Please create it and rerun the application.")
 
-    # Check and create orders table
     try:
         supabase.table("orders").select("*").limit(1).execute()
         logger.info("Orders table exists")
@@ -111,7 +104,6 @@ CREATE TABLE orders (
         """)
         raise Exception("Orders table missing. Please create it and rerun the application.")
 
-    # Check and create deliveries table
     try:
         supabase.table("deliveries").select("*").limit(1).execute()
         logger.info("Deliveries table exists")
@@ -136,7 +128,22 @@ CREATE TABLE deliveries (
         """)
         raise Exception("Deliveries table missing. Please create it and rerun the application.")
 
-    # Check and create ewaybills table
+    # Check and add total_amount_received column to deliveries if not exists
+    try:
+        response = supabase.table("deliveries").select("total_amount_received").limit(1).execute()
+        logger.info("total_amount_received column exists in deliveries table")
+    except Exception as e:
+        logger.error(f"total_amount_received column does not exist in deliveries table: {e}")
+        st.error("The 'total_amount_received' column is missing in the 'deliveries' table. Please add it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE deliveries ADD COLUMN total_amount_received REAL;
+        """)
+        raise Exception("total_amount_received column missing in deliveries table. Please add it and rerun the application.")
+
+    # Check and remove base_price column from deliveries if exists
+    
+        
+
     try:
         supabase.table("ewaybills").select("*").limit(1).execute()
         logger.info("Ewaybills table exists")
@@ -157,6 +164,63 @@ CREATE TABLE ewaybills (
 );
         """)
         raise Exception("Ewaybills table missing. Please create it and rerun the application.")
+
+    # Check and add is_admin column to users if not exists
+    try:
+        response = supabase.table("users").select("is_admin").limit(1).execute()
+        logger.info("is_admin column exists in users table")
+    except Exception as e:
+        logger.error(f"is_admin column does not exist in users table: {e}")
+        st.error("The 'is_admin' column is missing in the 'users' table. Please add it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0;
+        """)
+        raise Exception("is_admin column missing. Please add it and rerun the application.")
+
+    # Check and add delivered_quantity column to orders if not exists
+    try:
+        response = supabase.table("orders").select("delivered_quantity").limit(1).execute()
+        logger.info("delivered_quantity column exists in orders table")
+    except Exception as e:
+        logger.error(f"delivered_quantity column does not exist in orders table: {e}")
+        st.error("The 'delivered_quantity' column is missing in the 'orders' table. Please add it using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE orders ADD COLUMN delivered_quantity INTEGER DEFAULT 0;
+        """)
+        raise Exception("delivered_quantity column missing. Please add it and rerun the application.")
+
+    # Check and add resource_type column to ewaybills if not exists
+    try:
+        response = supabase.table("ewaybills").select("resource_type").limit(1).execute()
+        logger.info("resource_type column exists in ewaybills table")
+    except Exception as e:
+        logger.error(f"resource_type column does not exist in ewaybills table: {e}")
+        st.error("The 'resource_type' column is missing in the 'ewaybills' table. Please add it and populate existing records using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE ewaybills ADD COLUMN resource_type TEXT;
+UPDATE ewaybills SET resource_type = CASE
+    WHEN file_name LIKE '%.pdf' THEN 'raw'
+    ELSE 'image'
+END;
+        """)
+        raise Exception("resource_type column missing. Please add it and rerun the application.")
+
+    # Check and add resource_type column to deliveries if not exists
+    try:
+        response = supabase.table("deliveries").select("resource_type").limit(1).execute()
+        logger.info("resource_type column exists in deliveries table")
+    except Exception as e:
+        logger.error(f"resource_type column does not exist in deliveries table: {e}")
+        st.error("The 'resource_type' column is missing in the 'deliveries' table. Please add it and populate existing records using the following SQL in the Supabase SQL Editor:")
+        st.code("""
+ALTER TABLE deliveries ADD COLUMN resource_type TEXT;
+UPDATE deliveries SET resource_type = CASE
+    WHEN file_name LIKE '%.pdf' THEN 'raw'
+    ELSE 'image'
+END;
+        """)
+        raise Exception("resource_type column missing in deliveries table. Please add it and rerun the application.")
+
 init_db()
 
 # Initialize session state

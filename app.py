@@ -247,6 +247,150 @@ if "clear_form" not in st.session_state:
 if "show_delete_account" not in st.session_state:
     st.session_state.show_delete_account = False
 
+def display_header():
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&display=swap');
+        
+        .header-container {
+            background: linear-gradient(135deg, #444a54 0%, #212832 100%);
+            padding: 20px 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            text-align: left;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .logo-container {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .logo-text-primary {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 255, 255, 0.2);
+            margin: 0;
+            letter-spacing: 1px;
+        }
+        
+        .logo-text-secondary {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 255, 255, 0.2);
+            margin-left: 10px;
+            letter-spacing: 1px;
+        }
+        
+        .logo-text-full {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 20px;
+            font-weight: 500;
+            color: #ffffff;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+            margin-top: 5px;
+            letter-spacing: 1px;
+            display: block;
+            text-align: right;
+            padding-right: 10px;
+        }
+        
+        /* 3D effect for text */
+        .metallic-text {
+            color: #f5f5f5;
+            background: linear-gradient(180deg, #ffffff 0%, #c0c0c0 50%, #ffffff 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(2px 2px 2px rgba(0, 0, 0, 0.5));
+        }
+        
+        /* Media queries for responsiveness */
+        @media (min-width: 768px) {
+            .header-container {
+                padding: 24px 20px;
+                margin-bottom: 25px;
+            }
+            
+            .logo-text-primary {
+                font-size: 38px;
+            }
+            
+            .logo-text-secondary {
+                font-size: 30px;
+            }
+            
+            .logo-text-full {
+                font-size: 24px;
+                padding-right: 20px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .logo-container {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .logo-text-primary {
+                font-size: 28px;
+            }
+            
+            .logo-text-secondary {
+                font-size: 20px;
+                margin-left: 0;
+                margin-top: 5px;
+            }
+            
+            .logo-text-full {
+                font-size: 18px;
+                text-align: right;
+                padding-right: 10px;
+                margin-top: 8px;
+                width: 100%;
+            }
+        }
+        
+        @media (max-width: 400px) {
+            .header-container {
+                padding: 15px 12px;
+            }
+            
+            .logo-text-primary {
+                font-size: 24px;
+            }
+            
+            .logo-text-secondary {
+                font-size: 18px;
+            }
+            
+            .logo-text-full {
+                font-size: 16px;
+                text-align: right;
+                width: 100%;
+            }
+        }
+        </style>
+        
+        <div class="header-container">
+            <div class="logo-container">
+                <span class="logo-text-primary metallic-text">OEA</span>
+                <span class="logo-text-secondary metallic-text">OrderEasy Analytics</span>
+            </div>
+            <span class="logo-text-full metallic-text">OrderEasy</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 # Helper functions for database operations
 def load_users():
     response = supabase.table("users").select("*").execute()
@@ -833,8 +977,7 @@ def get_monthly_summary(df):
 
 # UI Components
 def show_login_page():
-    st.title("Order Management System")
-    
+    display_header()
     tab1, tab2 = st.tabs(["Login", "Sign Up"])
     
     with tab1:
@@ -867,6 +1010,8 @@ def show_login_page():
                     st.error("Please fill in all fields")
 
 def show_sidebar():
+    display_header()
+    
     st.sidebar.title(f"Organization: {st.session_state.current_org}")
     st.sidebar.write(f"Logged in as: {st.session_state.current_user}")
     if st.session_state.is_admin:
@@ -905,6 +1050,7 @@ def show_sidebar():
     return menu
 
 def show_admin_panel():
+    
     st.title("Admin Panel")
     
     if not st.session_state.is_admin:
@@ -938,6 +1084,8 @@ def show_admin_panel():
             st.error("Please select a user to delete.")
 
 def show_add_order():
+    
+    
     st.title("Add Order")
     
     with st.form("add_order_form"):
@@ -984,6 +1132,7 @@ def show_add_order():
         st.rerun()
 
 def show_dashboard():
+    
     st.title("Dashboard")
     
     org_orders = get_org_orders()
@@ -1146,24 +1295,28 @@ def show_dashboard():
     st.subheader("👥 Advanced Customer Analysis")
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("Customer Lifetime Value")
-        customer_metrics = org_orders.groupby("receiver_name").agg({
-            "total_amount_with_gst": ["sum", "count"],
-            "date": "min"
-        }).reset_index()
-        customer_metrics.columns = ["receiver_name", "total_spent", "order_count", "first_order"]
-        customer_metrics["customer_age"] = (datetime.datetime.now() - customer_metrics["first_order"]).dt.days / 30
-        customer_metrics["clv"] = customer_metrics["total_spent"] / customer_metrics["customer_age"].replace(0, 1)
-        top_clv = customer_metrics.sort_values("clv").head(5)
-        if not top_clv.empty:
-            fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
-            sns.barplot(data=top_clv, x="clv", y="receiver_name", ax=ax, palette="Blues_d")
-            ax.set_xlabel("Customer Lifetime Value ($/month)")
-            ax.set_title("Top Customers by Lifetime Value")
-            for i, v in enumerate(top_clv["clv"]):
-                ax.text(v, i, f"${v:.2f}", va="center")
-            plt.tight_layout()
-            st.pyplot(fig)
+      st.subheader("Customer Lifetime Value")
+      customer_metrics = org_orders.groupby("receiver_name").agg({
+        "total_amount_with_gst": ["sum", "count"],
+        "date": "min"
+      }).reset_index()
+      customer_metrics.columns = ["receiver_name", "total_spent", "order_count", "first_order"]
+      customer_metrics["customer_age"] = (datetime.datetime.now() - customer_metrics["first_order"]).dt.days / 30
+      customer_metrics["clv"] = customer_metrics["total_spent"] / customer_metrics["customer_age"].replace(0, 1)
+      top_clv = customer_metrics.sort_values("clv", ascending=False).head(5)
+      if not top_clv.empty:
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        # Ensure the order matches the sorted DataFrame
+        sns.barplot(data=top_clv, x="clv", y="receiver_name", ax=ax, palette="Blues_d", order=top_clv["receiver_name"])
+        ax.invert_xaxis()  # Invert the x-axis to plot bars from right to left
+        ax.set_xlabel("Customer Lifetime Value ($/month)")
+        ax.set_ylabel("Receiver")
+        ax.set_title("Top Customers by Lifetime Value")
+        for i, v in enumerate(top_clv["clv"]):
+            # Corrected ax.text() call: x, y, string, and formatting
+            ax.text(x=v * 0.95, y=i, s=f"${v:.2f}", va="center", ha="right")  # Position text slightly inside the bar
+        plt.tight_layout()
+        st.pyplot(fig)
     with col2:
         st.subheader("Customer Retention")
         customer_orders = org_orders.groupby(["receiver_name", org_orders["date"].dt.to_period("M")]).size().reset_index(name="orders")
@@ -1411,6 +1564,7 @@ def show_dashboard():
         st.info("No orders available to analyze order sizes.")
 
 def show_edit_order_form(order):
+    
     st.title("Edit Order")
     
     with st.form("edit_order_form"):
@@ -1462,6 +1616,7 @@ def show_edit_order_form(order):
             st.rerun()
 
 def show_manage_orders():
+    
     st.title("Manage Orders")
     
     if st.session_state.form_submitted:
@@ -1643,6 +1798,7 @@ def show_manage_orders():
                             st.session_state.form_status = "error"
                         st.rerun()
 def show_export_reports():
+    
     st.title("Export Reports")
     
     org_orders = get_org_orders()
@@ -1810,6 +1966,7 @@ def show_export_reports():
                 )
 
 def show_account_settings():
+    
     st.title("Account Settings")
     
     st.subheader("User Information")

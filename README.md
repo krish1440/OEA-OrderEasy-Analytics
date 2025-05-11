@@ -1,5 +1,6 @@
-# Smart Order Management System
+# OEAOrderEasy Analytics
 
+## Smart Order Management System
 ## Overview
 The **Smart Order Management System** is a comprehensive web application built using **Streamlit**, designed to streamline order processing, tracking, and analytics for businesses. It integrates with **Supabase** for database management and **Cloudinary** for file storage, offering features like order creation, e-way bill uploads, advanced analytics, and user management with admin capabilities.
 

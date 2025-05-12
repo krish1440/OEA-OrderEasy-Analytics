@@ -696,10 +696,7 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
             effective_pending = 0  # Prevent negative pending amount due to overpayment
 
         # Check if this delivery's amount exceeds the effective pending amount
-        if total_amount_received > effective_pending:
-            logger.error(f"Total amount received ({total_amount_received}) exceeds effective pending amount ({effective_pending})")
-            return False, f"Total amount received (${total_amount_received:.2f}) exceeds remaining pending amount (${effective_pending:.2f})."
-
+        
         # Update pending amount
         new_pending = effective_pending - total_amount_received
 

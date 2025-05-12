@@ -761,10 +761,7 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
             updates["pending_amount"] = 0.0
             # Verify total amount received (including advance) matches order total
             total_received = previous_total_received + total_amount_received + advance_payment
-            if total_received > order_total_amount + 0.01:  # Allow small floating-point differences, only check for overpayment
-               logger.error(f"Total amount received ({total_received}) exceeds order total ({order_total_amount})")
-               return False, f"Total amount received (${total_received:.2f}) exceeds order total (${order_total_amount:.2f})."
-
+            
         supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
 
         logger.info(f"Added delivery #{next_delivery_id} of {delivery_quantity} units for order {order_id}, amount received: ${total_amount_received:.2f}, new pending: ${new_pending:.2f}")

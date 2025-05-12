@@ -764,9 +764,9 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
             updates["pending_amount"] = 0.0
             # Verify total amount received (including advance) matches order total
             total_received = previous_total_received + total_amount_received + advance_payment
-            if abs(total_received - order_total_amount) > 0.01:  # Allow small floating-point differences
-                logger.error(f"Total amount received ({total_received}) does not match order total ({order_total_amount})")
-                return False, f"Total amount received (${total_received:.2f}) does not match order total (${order_total_amount:.2f})."
+            if total_received > order_total_amount + 0.01:  # Allow small floating-point differences, only check for overpayment
+               logger.error(f"Total amount received ({total_received}) exceeds order total ({order_total_amount})")
+               return False, f"Total amount received (${total_received:.2f}) exceeds order total (${order_total_amount:.2f})."
 
         supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
 
@@ -919,7 +919,7 @@ def get_org_orders():
     ])
 
 # Analytics functions
-# Analytics functions
+
 def get_total_revenue(df):
     if df.empty:
         return 0
@@ -1667,7 +1667,7 @@ def show_manage_orders():
     for _, order in filtered_orders.iterrows():
         # Calculate pending quantity
         pending_quantity = order["quantity"] - order["delivered_quantity"]
-        # Update expander label
+        #expander label
         expander_label = (
             f"Order #{order['order_id']} - {order['product']} - {order['status']} -"
             f"(Pending Quantity: {pending_quantity}, Pending Amount: ${order['pending_amount']:.2f})"
@@ -1948,7 +1948,7 @@ def show_export_reports():
                 sheet.append(["Order Details"])
                 for r in dataframe_to_rows(order_details, index=False, header=True):
                     sheet.append(r)
-                sheet.append([])  # Blank row for separation
+                sheet.append([]) 
                 
                 # Write deliveries
                 sheet.append(["Delivery Details"])

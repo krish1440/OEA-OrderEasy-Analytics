@@ -482,8 +482,8 @@ def load_deliveries(order_id=None, org=None):
     response = query.execute()
     df = pd.DataFrame(response.data)
     return df if not df.empty else pd.DataFrame(columns=[
-        "delivery_id", "order_id", "org", "delivery_quantity", "delivery_date",
-        "public_id", "url", "file_name", "upload_date", "resource_type"
+        "org", "delivery_id", "order_id", "delivery_quantity", "delivery_date",
+        "total_amount_received", "public_id", "url", "file_name", "upload_date", "resource_type"
     ])
 
 
@@ -501,6 +501,29 @@ def delete_delivery(order_id, delivery_id):
         public_id = delivery["public_id"]
         resource_type = delivery["resource_type"]
 
+        # Validate delivery_quantity
+        if delivery_quantity <= 0:
+            logger.error(f"Invalid delivery quantity {delivery_quantity} for delivery {delivery_id}")
+            return False, "Invalid delivery quantity"
+
+        # Get order details before deleting delivery
+        order_response = supabase.table("orders").select(
+            "delivered_quantity, quantity, status, pending_amount, total_amount_with_gst, advance_payment"
+        ).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        if not order_response.data:
+            logger.error(f"Order {order_id} not found for org {st.session_state.current_org}")
+            return False, "Order not found"
+
+        order = order_response.data[0]
+
+        # Validate delivered_quantity
+        if order["delivered_quantity"] < delivery_quantity:
+            logger.error(
+                f"Cannot delete delivery {delivery_id}: delivered_quantity {order['delivered_quantity']} "
+                f"is less than delivery_quantity {delivery_quantity}"
+            )
+            return False, "Cannot delete delivery: Insufficient delivered quantity"
+
         # Delete Cloudinary file if exists
         if public_id:
             try:
@@ -515,29 +538,34 @@ def delete_delivery(order_id, delivery_id):
         # Delete delivery from database
         supabase.table("deliveries").delete().eq("order_id", order_id).eq("delivery_id", delivery_id).eq("org", st.session_state.current_org).execute()
 
-        # Update order's delivered_quantity and pending_amount
-        order_response = supabase.table("orders").select(
-            "delivered_quantity, quantity, status, pending_amount, total_amount_with_gst, advance_payment"
-        ).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
-        if order_response.data:
-            order = order_response.data[0]
-            new_delivered = max(0, order["delivered_quantity"] - delivery_quantity)
-            # Recalculate pending amount
-            deliveries = load_deliveries(order_id, st.session_state.current_org)
-            remaining_total_received = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
-            new_pending = order["total_amount_with_gst"] - order["advance_payment"] - remaining_total_received
-            if new_pending < 0:
-                new_pending = 0  # Prevent negative pending amount
-            updates = {
-                "delivered_quantity": new_delivered,
-                "pending_amount": new_pending
-            }
-            if new_delivered < order["quantity"] and order["status"] == "Completed":
-                updates["status"] = "Pending"
-            supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
-            logger.info(f"Updated order {order_id}: delivered_quantity={new_delivered}, pending_amount={new_pending}, status={updates.get('status', order['status'])}")
+        # Calculate new delivered_quantity
+        new_delivered_quantity = order["delivered_quantity"] - delivery_quantity
 
-        logger.info(f"Deleted delivery #{delivery_id} for order {order_id}")
+        # Recalculate pending_amount
+        # Sum total_amount_received from remaining deliveries (excluding the deleted one)
+        remaining_deliveries = supabase.table("deliveries").select("total_amount_received").eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        remaining_total_received = sum(d["total_amount_received"] for d in remaining_deliveries.data) if remaining_deliveries.data else 0
+        new_pending_amount = order["total_amount_with_gst"] - order["advance_payment"] - remaining_total_received
+        new_pending_amount = max(0, new_pending_amount)  # Prevent negative pending amount
+
+        # Update status if necessary
+        new_status = order["status"]
+        if new_delivered_quantity < order["quantity"] and order["status"] == "Completed":
+            new_status = "Pending"
+
+        # Update order
+        updates = {
+            "delivered_quantity": new_delivered_quantity,
+            "pending_amount": new_pending_amount,
+            "status": new_status
+        }
+        supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+
+        logger.info(
+            f"Deleted delivery #{delivery_id} for order {order_id}. "
+            f"Updated order: delivered_quantity={new_delivered_quantity}, "
+            f"pending_amount={new_pending_amount:.2f}, status={new_status}"
+        )
         return True, "Delivery deleted successfully"
     except Exception as e:
         logger.error(f"Error deleting delivery {delivery_id} for order {order_id}: {e}")
@@ -695,12 +723,10 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
         if effective_pending < 0:
             effective_pending = 0  # Prevent negative pending amount due to overpayment
 
-        # Check if this delivery's amount exceeds the effective pending amount
-        
         # Update pending amount
         new_pending = effective_pending - total_amount_received
 
-        # Calculate next delivery_id for this order
+        # Calculate next delivery_id for this order and org
         max_delivery_id_response = supabase.table("deliveries").select("delivery_id").eq("order_id", order_id).eq("org", st.session_state.current_org).order("delivery_id", desc=True).limit(1).execute()
         next_delivery_id = 1 if not max_delivery_id_response.data else max_delivery_id_response.data[0]["delivery_id"] + 1
 
@@ -736,9 +762,9 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
 
         # Insert delivery with payment details
         delivery_data = {
-            "order_id": order_id,
-            "delivery_id": next_delivery_id,
             "org": st.session_state.current_org,
+            "delivery_id": next_delivery_id,
+            "order_id": order_id,
             "delivery_quantity": int(delivery_quantity),
             "delivery_date": str(delivery_date),
             "total_amount_received": float(total_amount_received),
@@ -757,7 +783,6 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
         }
         if new_delivered >= total_quantity and order["status"] != "Completed":
             updates["status"] = "Completed"
-            # Ensure pending amount is zero when order is completed
             updates["pending_amount"] = 0.0
             # Verify total amount received (including advance) matches order total
             total_received = previous_total_received + total_amount_received + advance_payment

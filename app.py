@@ -1021,12 +1021,7 @@ def get_monthly_summary(df):
 def show_login_page():
     display_header()
     tab1, tab2 = st.tabs(["Login", "Sign Up"])
-    
-    st.markdown("**Forgot Password?** Contact us at:")
-    st.markdown("📧 krishchaudhary144@gmail.com")
-    st.markdown("📞 +91 6353160662")
-    st.markdown("---")
-    
+
     with tab1:
         with st.form("login_form"):
             username = st.text_input("Username")
@@ -1039,6 +1034,11 @@ def show_login_page():
                     st.rerun()
                 else:
                     st.error("Invalid username or password")
+                    
+        st.markdown("**Forgot Password?** Contact us at:")
+        st.markdown("📧 krishchaudhary144@gmail.com")
+        st.markdown("📞 +91 6353160662")
+        st.markdown("---")
     
     with tab2:
         with st.form("signup_form"):

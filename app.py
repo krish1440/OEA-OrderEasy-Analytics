@@ -468,9 +468,9 @@ def signup(username, password, organization):
     if username in load_users():
         return False
     
-    password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$"
+    password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@₹!%*?&])[A-Za-z\d@₹!%*?&]{6,}₹"
     if not re.match(password_pattern, password):
-        st.error("Password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@$!%*?&).")
+        st.error("Password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@₹!%*?&).")
         return False
     
     return save_user(username, password, organization)
@@ -789,7 +789,7 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
             
         supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
 
-        logger.info(f"Added delivery #{next_delivery_id} of {delivery_quantity} units for order {order_id}, amount received: ${total_amount_received:.2f}, new pending: ${new_pending:.2f}")
+        logger.info(f"Added delivery #{next_delivery_id} of {delivery_quantity} units for order {order_id}, amount received: ₹{total_amount_received:.2f}, new pending: ₹{new_pending:.2f}")
         return True, "Delivery added successfully"
     except Exception as e:
         logger.error(f"Error adding delivery for order {order_id}: {e}")
@@ -852,42 +852,65 @@ def upload_ewaybill(order_id, file_data, file_name):
         logger.error(f"Error uploading e-way bill for order {order_id}: {e}")
         return False
 
+
 def delete_order(order_id):
-    # Delete all deliveries and their Cloudinary files
-    deliveries = load_deliveries(order_id, st.session_state.current_org)
-    for _, delivery in deliveries.iterrows():
-        success, message = delete_delivery(delivery["delivery_id"], order_id)
-        if not success:
-            logger.error(f"Failed to delete delivery {delivery['delivery_id']}: {message}")
-            st.session_state.form_submitted = True
-            st.session_state.form_message = f"Error deleting order: {message}"
-            st.session_state.form_status = "error"
-            return False
-    
-    # Delete order
-    supabase.table("orders").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
-    
-    # Delete legacy e-way bill if exists
-    ewaybill_key = f"{order_id}_{st.session_state.current_org}"
-    ewaybills = load_ewaybills()
-    if ewaybill_key in ewaybills:
-        public_id = ewaybills[ewaybill_key]["public_id"]
-        resource_type = ewaybills[ewaybill_key]["resource_type"]
-        try:
-            result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
-            if result.get("result") == "ok":
-                logger.info(f"Deleted legacy Cloudinary file: {public_id} (resource_type: {resource_type})")
-            else:
-                logger.warning(f"Legacy Cloudinary file deletion issue: {public_id}, result: {result}")
-        except Exception as e:
-            logger.error(f"Error deleting legacy Cloudinary file {public_id}: {e}")
+    try:
+        # Get deliveries for the order
+        deliveries = load_deliveries(order_id, st.session_state.current_org)
+
+        # Delete Cloudinary files for deliveries
+        for _, delivery in deliveries.iterrows():
+            if delivery["public_id"]:
+                try:
+                    result = cloudinary.uploader.destroy(delivery["public_id"], resource_type=delivery["resource_type"])
+                    if result.get("result") == "ok":
+                        logger.info(
+                            f"Deleted Cloudinary delivery file: {delivery['public_id']} (resource_type: {delivery['resource_type']})")
+                    else:
+                        logger.warning(
+                            f"Cloudinary delivery file deletion issue: {delivery['public_id']}, result: {result}")
+                except Exception as e:
+                    logger.error(f"Error deleting Cloudinary delivery file {delivery['public_id']}: {e}")
+
+        # Delete deliveries from database
+        supabase.table("deliveries").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        logger.info(f"Deleted all deliveries for order {order_id}")
+
+        # Delete order-specific e-way bill if exists
+        ewaybill_response = supabase.table("ewaybills").select("*").eq("order_id", order_id).eq("org",
+                                                                                                st.session_state.current_org).execute()
+        if ewaybill_response.data:
+            ewaybill = ewaybill_response.data[0]
+            if ewaybill["public_id"]:
+                try:
+                    result = cloudinary.uploader.destroy(ewaybill["public_id"], resource_type=ewaybill["resource_type"])
+                    if result.get("result") == "ok":
+                        logger.info(
+                            f"Deleted Cloudinary e-way bill: {ewaybill['public_id']} (resource_type: {ewaybill['resource_type']})")
+                    else:
+                        logger.warning(
+                            f"Cloudinary e-way bill deletion issue: {ewaybill['public_id']}, result: {result}")
+                except Exception as e:
+                    logger.error(f"Error deleting Cloudinary e-way bill {ewaybill['public_id']}: {e}")
+
+        # Delete e-way bill from database
         supabase.table("ewaybills").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
-    
-    st.session_state.form_submitted = True
-    st.session_state.form_message = f"Order #{order_id} deleted successfully!"
-    st.session_state.form_status = "success"
-    logger.info(f"Order {order_id} deleted successfully")
-    return True
+        logger.info(f"Deleted e-way bill for order {order_id}")
+
+        # Delete the order
+        supabase.table("orders").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        logger.info(f"Deleted order {order_id}")
+
+        st.session_state.form_submitted = True
+        st.session_state.form_message = f"Order #{order_id} and all associated data deleted successfully!"
+        st.session_state.form_status = "success"
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting order {order_id}: {e}")
+        st.session_state.form_submitted = True
+        st.session_state.form_message = f"Error deleting order: {str(e)}"
+        st.session_state.form_status = "error"
+        return False
 
 def edit_order(order_id, receiver_name, date, expected_delivery_date, product, description, quantity, price, gst, advance_payment):
     # Check if new quantity is valid
@@ -1118,22 +1141,22 @@ def show_add_order():
         with col1:
             quantity = st.number_input("Quantity", min_value=1, value=1)
         with col2:
-            price = st.number_input("Price per Unit ($)", min_value=0.01, value=0.01, step=0.01)
+            price = st.number_input("Price per Unit (₹)", min_value=0.01, value=0.01, step=0.01)
         
         basic_price = quantity * price
-        st.write(f"**Basic Price: ${basic_price:.2f}**")
+        st.write(f"**Basic Price: ₹{basic_price:.2f}**")
         
         col1, col2 = st.columns(2)
         with col1:
             gst = st.number_input("GST (%)", min_value=0.0, value=0.0, step=0.1)
         with col2:
-            advance_payment = st.number_input("Advance Payment ($)", min_value=0.0, value=0.0, step=0.01)
+            advance_payment = st.number_input("Advance Payment (₹)", min_value=0.0, value=0.0, step=0.01)
         
         total_amount_with_gst = basic_price + (basic_price * (gst / 100))
         pending_amount = total_amount_with_gst - advance_payment
         
-        st.write(f"**Total Amount with GST: ${total_amount_with_gst:.2f}**")
-        st.write(f"**Pending Amount: ${pending_amount:.2f}**")
+        st.write(f"**Total Amount with GST: ₹{total_amount_with_gst:.2f}**")
+        st.write(f"**Pending Amount: ₹{pending_amount:.2f}**")
         
         submitted = st.form_submit_button("Add Order")
         
@@ -1210,7 +1233,41 @@ def show_dashboard():
         plt.xticks(rotation=45)
         plt.tight_layout()
         st.pyplot(fig)
+    st.subheader("📅 Year-wise Revenue")
+    # Calculate revenue for each order
+    org_orders["revenue"] = 0.0
+    for idx, row in org_orders.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        org_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
     
+    # Extract year from date and group by year
+    org_orders["year"] = org_orders["date"].dt.year
+    yearly_revenue = org_orders.groupby("year")["revenue"].sum().reset_index()
+    yearly_revenue = yearly_revenue.sort_values("year", ascending=False)  # Sort in decreasing order
+    yearly_revenue["year"] = yearly_revenue["year"].astype(str)
+    
+    # Create dropdown for selecting year
+    if not yearly_revenue.empty:
+        selected_year = st.selectbox("Select Year for Revenue Details", 
+                                     options=yearly_revenue["year"].tolist(), 
+                                     key="year_wise_revenue")
+        
+        # Display revenue for the selected year
+        selected_revenue = yearly_revenue[yearly_revenue["year"] == selected_year]["revenue"].iloc[0]
+        st.metric(f"Revenue for {selected_year}", f"₹{selected_revenue:.2f}")
+        
+        # Display table of yearly revenue
+        st.write("**Year-wise Revenue Summary**")
+        yearly_revenue_display = yearly_revenue[["year", "revenue"]].rename(
+            columns={"year": "Year", "revenue": "Total Revenue (₹)"}
+        )
+        yearly_revenue_display["Total Revenue (₹)"] = yearly_revenue_display["Total Revenue (₹)"].map(
+            lambda x: f"{x:.2f}"
+        )
+        st.dataframe(yearly_revenue_display)
+    else:
+        st.info("No revenue data available for any year.")
     st.subheader("📈 Revenue and Financial Analysis")
     org_orders["month"] = pd.to_datetime(org_orders["date"]).dt.strftime("%b %Y")
     # Calculate revenue as advance_payment + total_amount_received from deliveries
@@ -1230,24 +1287,24 @@ def show_dashboard():
         delta = ((current_revenue - previous_revenue) / previous_revenue * 100) if previous_revenue > 0 else 0
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Total Revenue", f"${org_orders['revenue'].sum():.2f}", 
+            st.metric("Total Revenue", f"₹{org_orders['revenue'].sum():.2f}", 
                       f"{delta:.1f}% from previous month")
         with col2:
             avg_order_value = org_orders["revenue"].mean()
-            st.metric("Average Order Value", f"${avg_order_value:.2f}")
+            st.metric("Average Order Value", f"₹{avg_order_value:.2f}")
     else:
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Total Revenue", f"${org_orders['revenue'].sum():.2f}")
+            st.metric("Total Revenue", f"₹{org_orders['revenue'].sum():.2f}")
         with col2:
             avg_order_value = org_orders["revenue"].mean()
-            st.metric("Average Order Value", f"${avg_order_value:.2f}")
+            st.metric("Average Order Value", f"₹{avg_order_value:.2f}")
     
     if len(monthly_revenue) > 1:
         fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
         sns.lineplot(data=monthly_revenue, x="month", y="revenue", marker="o", ax=ax)
         ax.set_xlabel("Month")
-        ax.set_ylabel("Revenue ($)")
+        ax.set_ylabel("Revenue (₹)")
         ax.set_title("Monthly Revenue Trend")
         plt.xticks(rotation=45)
         plt.tight_layout()
@@ -1274,11 +1331,11 @@ def show_dashboard():
         receiver_revenue = receiver_revenue.sort_values("revenue", ascending=False).head(10)
         fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
         sns.barplot(data=receiver_revenue, x="revenue", y="receiver_name", ax=ax, palette="Greens_d")
-        ax.set_xlabel("Total Revenue ($)")
+        ax.set_xlabel("Total Revenue (₹)")
         ax.set_ylabel("Receiver")
         ax.set_title("Top Receivers by Revenue")
         for i, v in enumerate(receiver_revenue["revenue"]):
-            ax.text(v, i, f"${v:.2f}", va="center")
+            ax.text(v, i, f"₹{v:.2f}", va="center")
         plt.tight_layout()
         st.pyplot(fig)
     
@@ -1303,11 +1360,11 @@ def show_dashboard():
         product_revenue = product_revenue.sort_values("revenue", ascending=False).head(5)
         fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
         sns.barplot(data=product_revenue, x="revenue", y="product", ax=ax, palette="Purples_d")
-        ax.set_xlabel("Total Revenue ($)")
+        ax.set_xlabel("Total Revenue (₹)")
         ax.set_ylabel("Product")
         ax.set_title("Top Products by Revenue")
         for i, v in enumerate(product_revenue["revenue"]):
-            ax.text(v, i, f"${v:.2f}", va="center")
+            ax.text(v, i, f"₹{v:.2f}", va="center")
         plt.tight_layout()
         st.pyplot(fig)
     
@@ -1328,12 +1385,12 @@ def show_dashboard():
         # Ensure the order matches the sorted DataFrame
         sns.barplot(data=top_clv, x="clv", y="receiver_name", ax=ax, palette="Blues_d", order=top_clv["receiver_name"])
         ax.invert_xaxis()  # Invert the x-axis to plot bars from right to left
-        ax.set_xlabel("Customer Lifetime Value ($/month)")
+        ax.set_xlabel("Customer Lifetime Value (₹/month)")
         ax.set_ylabel("Receiver")
         ax.set_title("Top Customers by Lifetime Value")
         for i, v in enumerate(top_clv["clv"]):
             # Corrected ax.text() call: x, y, string, and formatting
-            ax.text(x=v * 0.95, y=i, s=f"${v:.2f}", va="center", ha="right")  # Position text slightly inside the bar
+            ax.text(x=v * 0.95, y=i, s=f"₹{v:.2f}", va="center", ha="right")  # Position text slightly inside the bar
         plt.tight_layout()
         st.pyplot(fig)
     with col2:
@@ -1383,7 +1440,7 @@ def show_dashboard():
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(FIGURE_WIDTH, 12), sharex=True)
         sns.lineplot(data=monthly_metrics, x="month_period", y="revenue", marker="o", ax=ax1, color="blue")
         ax1.set_title("Monthly Revenue Trend")
-        ax1.set_ylabel("Revenue ($)")
+        ax1.set_ylabel("Revenue (₹)")
         ax1.grid(True)
         sns.lineplot(data=monthly_metrics, x="month_period", y="quantity", marker="o", ax=ax2, color="green")
         ax2.set_title("Monthly Quantity Sold")
@@ -1392,7 +1449,7 @@ def show_dashboard():
         sns.lineplot(data=monthly_metrics, x="month_period", y="pending_amount", marker="o", ax=ax3, color="red")
         ax3.set_title("Monthly Pending Amount")
         ax3.set_xlabel("Month")
-        ax3.set_ylabel("Pending ($)")
+        ax3.set_ylabel("Pending (₹)")
         ax3.grid(True)
         plt.xticks(rotation=45)
         plt.tight_layout()
@@ -1436,7 +1493,7 @@ def show_dashboard():
             ax.plot(future_days.flatten(), future_predictions, "o--", color="red", label="Forecast")
             ax.fill_between(all_days, all_ci_lower, all_ci_upper, color="red", alpha=0.1, label="95% CI")
             ax.set_xlabel("Day")
-            ax.set_ylabel("Sales ($)")
+            ax.set_ylabel("Sales (₹)")
             ax.set_title("14-Day Sales Forecast with Confidence Intervals")
             ax.legend()
             plt.tight_layout()
@@ -1444,8 +1501,8 @@ def show_dashboard():
             
             weekly_forecast = sum(future_predictions[:7])
             two_week_forecast = sum(future_predictions)
-            st.metric("Predicted 7-Day Revenue", f"${weekly_forecast:.2f}")
-            st.metric("Predicted 14-Day Revenue", f"${two_week_forecast:.2f}")
+            st.metric("Predicted 7-Day Revenue", f"₹{weekly_forecast:.2f}")
+            st.metric("Predicted 14-Day Revenue", f"₹{two_week_forecast:.2f}")
             r_squared = model.score(X, y)
             st.metric("Forecast Reliability (R²)", f"{r_squared:.2f}")
         except Exception as e:
@@ -1464,20 +1521,20 @@ def show_dashboard():
         fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
         sns.barplot(data=status_metrics, x="status", y="pending_amount", ax=ax, palette="Reds_d")
         ax.set_xlabel("Order Status")
-        ax.set_ylabel("Pending Amount ($)")
+        ax.set_ylabel("Pending Amount (₹)")
         ax.set_title("Pending Amount by Status")
         for i, v in enumerate(status_metrics["pending_amount"]):
-            ax.text(i, v, f"${v:.2f}", ha="center", va="bottom")
+            ax.text(i, v, f"₹{v:.2f}", ha="center", va="bottom")
         plt.tight_layout()
         st.pyplot(fig)
     with col2:
         fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
         sns.barplot(data=status_metrics, x="status", y="revenue", ax=ax, palette="Blues_d")
         ax.set_xlabel("Order Status")
-        ax.set_ylabel("Revenue ($)")
+        ax.set_ylabel("Revenue (₹)")
         ax.set_title("Revenue by Status")
         for i, v in enumerate(status_metrics["revenue"]):
-            ax.text(i, v, f"${v:.2f}", ha="center", va="bottom")
+            ax.text(i, v, f"₹{v:.2f}", ha="center", va="bottom")
         plt.tight_layout()
         st.pyplot(fig)
     
@@ -1597,22 +1654,22 @@ def show_edit_order_form(order):
         with col1:
             quantity = st.number_input("Quantity", min_value=1, value=int(order["quantity"]))
         with col2:
-            price = st.number_input("Price per Unit ($)", min_value=0.01, value=float(order["price"]), step=0.01)
+            price = st.number_input("Price per Unit (₹)", min_value=0.01, value=float(order["price"]), step=0.01)
         
         basic_price = quantity * price
-        st.write(f"**Basic Price: ${basic_price:.2f}**")
+        st.write(f"**Basic Price: ₹{basic_price:.2f}**")
         
         col1, col2 = st.columns(2)
         with col1:
             gst = st.number_input("GST (%)", min_value=0.0, value=float(order["gst"]), step=0.1)
         with col2:
-            advance_payment = st.number_input("Advance Payment ($)", min_value=0.0, value=float(order["advance_payment"]), step=0.01)
+            advance_payment = st.number_input("Advance Payment (₹)", min_value=0.0, value=float(order["advance_payment"]), step=0.01)
         
         total_amount_with_gst = basic_price + (basic_price * (gst / 100))
         pending_amount = total_amount_with_gst - advance_payment
         
-        st.write(f"**Total Amount with GST: ${total_amount_with_gst:.2f}**")
-        st.write(f"**Pending Amount: ${pending_amount:.2f}**")
+        st.write(f"**Total Amount with GST: ₹{total_amount_with_gst:.2f}**")
+        st.write(f"**Pending Amount: ₹{pending_amount:.2f}**")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -1667,6 +1724,7 @@ def show_manage_orders():
                                   help="Select a date range to filter orders.")
     
     filtered_orders = org_orders.copy()
+
     if status_filter != "All":
         filtered_orders = filtered_orders[filtered_orders["status"] == status_filter]
     
@@ -1677,6 +1735,8 @@ def show_manage_orders():
             (filtered_orders["date"] >= pd.Timestamp(start_date)) & 
             (filtered_orders["date"] <= pd.Timestamp(end_date))
         ]
+    
+    filtered_orders = filtered_orders.sort_values(by="order_id")
     
     st.subheader("Orders")
     if filtered_orders.empty:
@@ -1689,7 +1749,7 @@ def show_manage_orders():
         #expander label
         expander_label = (
             f"Order #{order['order_id']} - {order['product']} - {order['status']} -"
-            f"(Pending Quantity: {pending_quantity}, Pending Amount: ${order['pending_amount']:.2f})"
+            f"(Pending Quantity: {pending_quantity}, Pending Amount: ₹{order['pending_amount']:.2f})"
         )
         with st.expander(expander_label):
             col1, col2 = st.columns([3, 1])
@@ -1704,12 +1764,12 @@ def show_manage_orders():
                 st.write(f"**Quantity Ordered:** {order['quantity']}")
                 st.write(f"**Quantity Delivered:** {order['delivered_quantity']}")
                 st.write(f"**Pending Quantity:** {pending_quantity}")
-                st.write(f"**Price per Unit:** ${order['price']:.2f}")
-                st.write(f"**Basic Price:** ${order['basic_price']:.2f}")
+                st.write(f"**Price per Unit:** ₹{order['price']:.2f}")
+                st.write(f"**Basic Price:** ₹{order['basic_price']:.2f}")
                 st.write(f"**GST (%):** {order['gst']:.1f}%")
-                st.write(f"**Advance Payment:** ${order['advance_payment']:.2f}")
-                st.write(f"**Total Amount with GST:** ${order['total_amount_with_gst']:.2f}")
-                st.write(f"**Pending Amount:** ${order['pending_amount']:.2f}")
+                st.write(f"**Advance Payment:** ₹{order['advance_payment']:.2f}")
+                st.write(f"**Total Amount with GST:** ₹{order['total_amount_with_gst']:.2f}")
+                st.write(f"**Pending Amount:** ₹{order['pending_amount']:.2f}")
             
             with col2:
                 order_id = order["order_id"]
@@ -1740,7 +1800,7 @@ def show_manage_orders():
                         st.write(f"**Delivery ID:** {delivery['delivery_id']}")
                         st.write(f"**Quantity:** {delivery['delivery_quantity']}")
                         st.write(f"**Date:** {delivery['delivery_date']}")
-                        st.write(f"**Total Amount Received:** ${delivery['total_amount_received']:.2f}")
+                        st.write(f"**Total Amount Received:** ₹{delivery['total_amount_received']:.2f}")
                         if delivery["url"]:
                             try:
                                 response = requests.get(delivery["url"], timeout=5)
@@ -1787,7 +1847,7 @@ def show_manage_orders():
                     )
                     delivery_date = st.date_input("Delivery Date", value=datetime.date.today())
                     total_amount_received = st.number_input(
-                        "Total Amount Received ($)",
+                        "Total Amount Received (₹)",
                         min_value=0.0,
                         value=0.0,
                         step=0.01,
@@ -1888,6 +1948,16 @@ def show_export_reports():
         }).reset_index()
         monthly_revenue.columns = ["Month", "Total Revenue"]
         
+        # Add yearly revenue calculation
+        org_orders["year"] = org_orders["date"].dt.year
+        yearly_revenue = org_orders.groupby("year").agg({
+            "revenue": "sum"
+        }).reset_index()
+        yearly_revenue.columns = ["Year", "Total Revenue"]
+        yearly_revenue["Year"] = yearly_revenue["Year"].astype(str)
+        
+        # Display monthly and yearly revenue
+        st.write("**Monthly Revenue**")
         if not monthly_revenue.empty:
             st.dataframe(monthly_revenue)
             if st.button("Export Revenue Summary"):
@@ -1902,6 +1972,22 @@ def show_export_reports():
                 )
         else:
             st.info("No orders to calculate revenue.")
+        
+        st.write("**Yearly Revenue**")
+        if not yearly_revenue.empty:
+            st.dataframe(yearly_revenue)
+            if st.button("Export Yearly Revenue"):
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    yearly_revenue.to_excel(writer, index=False)
+                st.download_button(
+                    label="Download Yearly Revenue",
+                    data=output.getvalue(),
+                    file_name="yearly_revenue.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        else:
+            st.info("No orders to calculate yearly revenue.")
     
         st.subheader("Export Deliveries for a Specific Order")
         order_options = [(row["order_id"], row["org"], row["product"]) for _, row in filtered_orders.iterrows()]
@@ -1920,7 +2006,7 @@ def show_export_reports():
                 st.write(f"**Delivery ID**: {delivery['delivery_id']}")
                 st.write(f"**Quantity**: {delivery['delivery_quantity']}")
                 st.write(f"**Date**: {delivery['delivery_date']}")
-                st.write(f"**Total Amount Received**: ${delivery['total_amount_received']:.2f}")
+                st.write(f"**Total Amount Received**: ₹{delivery['total_amount_received']:.2f}")
                 st.markdown("---")
             
             if st.button("Export Deliveries to Excel"):
@@ -2004,9 +2090,9 @@ def show_account_settings():
                 users = load_users()
                 if users[st.session_state.current_user]["password"] == current_password:
                     if new_password == confirm_password:
-                        password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$"
+                        password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@₹!%*?&])[A-Za-z\d@₹!%*?&]{6,}₹"
                         if not re.match(password_pattern, new_password):
-                            st.error("New password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@$!%*?&).")
+                            st.error("New password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@₹!%*?&).")
                         else:
                             supabase.table("users").update({"password": new_password}).eq("username", st.session_state.current_user).execute()
                             st.success("Password changed successfully!")

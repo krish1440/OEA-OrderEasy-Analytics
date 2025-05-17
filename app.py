@@ -1088,6 +1088,11 @@ def show_sidebar():
             if st.button("Cancel"):
                 st.session_state.show_delete_account = False
                 st.rerun()
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Contact Us")
+    st.sidebar.write("📧 krishchaudhary144@gmail.com")
+    st.sidebar.write("📞 +91 6353160662")
         
     return menu
 

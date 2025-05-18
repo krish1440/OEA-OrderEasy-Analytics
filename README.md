@@ -38,82 +38,12 @@ To run the application locally, ensure you have:
   - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
   - `ADMIN_USERNAME`, `ADMIN_PASSWORD`
   - `SUPABASE_URL`, `SUPABASE_KEY`
+`
 
-## Installation
-1. **Clone the Repository**:
-   ```bash
-   git clone <repository-url>
-   cd smart-order-management
-   ```
-
-2. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Set Up Environment Variables**:
-   Create a `.env` file in the project root with the following:
-   ```env
-   CLOUDINARY_CLOUD_NAME=your_cloud_name
-   CLOUDINARY_API_KEY=your_api_key
-   CLOUDINARY_API_SECRET=your_api_secret
-   ADMIN_USERNAME=your_admin_username
-   ADMIN_PASSWORD=your_admin_password
-   SUPABASE_URL=your_supabase_url
-   SUPABASE_KEY=your_supabase_key
-   ```
-
-4. **Create Supabase Tables**:
-   Run the following SQL in the Supabase SQL Editor to set up the required tables:
-   ```sql
-   CREATE TABLE users (
-       username TEXT PRIMARY KEY,
-       password TEXT NOT NULL,
-       organization TEXT NOT NULL,
-       is_admin INTEGER DEFAULT 0
-   );
-
-   CREATE TABLE orders (
-       order_id INTEGER,
-       org TEXT,
-       receiver_name TEXT,
-       date TEXT,
-       expected_delivery_date TEXT,
-       product TEXT,
-       description TEXT,
-       quantity INTEGER,
-       price REAL,
-       basic_price REAL,
-       gst REAL,
-       advance_payment REAL,
-       total_amount_with_gst REAL,
-       pending_amount REAL,
-       status TEXT,
-       created_by TEXT,
-       PRIMARY KEY (order_id, org)
-   );
-
-   CREATE TABLE ewaybills (
-       order_id INTEGER,
-       org TEXT,
-       public_id TEXT,
-       url TEXT,
-       file_name TEXT,
-       upload_date TEXT,
-       resource_type TEXT,
-       PRIMARY KEY (order_id, org),
-       FOREIGN KEY (order_id, org) REFERENCES orders (order_id, org)
-   );
-   ```
-
-5. **Run the Application**:
-   ```bash
-   streamlit run app.py
-   ```
 
 ## Deployment
 The application is deployed on Streamlit Cloud and can be accessed at:  
-[Smart Order Management](https://smart-order-management.streamlit.app/)
+[Smart Order Management](https://oea-ordereasy-analytic.streamlit.app/)
 
 ## Usage
 1. **Sign Up / Log In**: Create an account or log in with existing credentials.
@@ -124,13 +54,7 @@ The application is deployed on Streamlit Cloud and can be accessed at:
 6. **Admin Panel** (Admins only): Manage users and delete accounts.
 7. **Account Settings**: Change passwords or delete your account.
 
-## Contributing
-Contributions are welcome! To contribute:
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature/your-feature`).
-3. Make your changes and commit (`git commit -m "Add your feature"`).
-4. Push to the branch (`git push origin feature/your-feature`).
-5. Open a pull request.
+
 
 ## Author
 Developed by **Krish Chaudhary**  

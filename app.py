@@ -55,7 +55,7 @@ cloudinary.config(
 supabase: Client = create_client(supabase_url, supabase_key)
 
 # Set page configuration
-st.set_page_config(page_title="OrderEasy", layout="wide", page_icon="logo.png")
+st.set_page_config(page_title="OrderEasy Analytics   ", layout="wide", page_icon="logo.png")
 
 # Database setup
 def init_db():

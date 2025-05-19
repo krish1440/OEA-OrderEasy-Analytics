@@ -55,7 +55,7 @@ cloudinary.config(
 supabase: Client = create_client(supabase_url, supabase_key)
 
 # Set page configuration
-st.set_page_config(page_title="OrderEasy Analytics   ", layout="wide", page_icon="logo.png")
+st.set_page_config(page_title="OrderEasy Analytics", layout="wide", page_icon="logo.png")
 
 # Database setup
 def init_db():
@@ -465,15 +465,29 @@ def login(username, password):
     return False
 
 def signup(username, password, organization):
-    if username in load_users():
+    users = load_users()
+    if username in users:
+        st.error("Username already exists. Please choose a different username.")
         return False
     
-    password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@₹!%*?&])[A-Za-z\d@₹!%*?&]{6,}₹"
+    # Password validation: at least 6 characters, one letter, one digit, one special character
+    password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@₹!%*?&])[A-Za-z\d@₹!%*?&]{6,}$"
     if not re.match(password_pattern, password):
-        st.error("Password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@₹!%*?&).")
+        st.error("Password must be at least 6 characters long, contain at least one letter, one digit, and one special character (@₹!%*?&).")
         return False
     
-    return save_user(username, password, organization)
+    # Ensure organization is provided
+    if not organization:
+        st.error("Organization name is required.")
+        return False
+    
+    success = save_user(username, password, organization)
+    if success:
+        logger.info(f"New user {username} signed up successfully for organization {organization}")
+        return True
+    else:
+        st.error("Failed to create account. Please try again.")
+        return False
 
 def load_deliveries(order_id=None, org=None):
     query = supabase.table("deliveries").select("*")
@@ -1136,8 +1150,6 @@ def show_admin_panel():
             st.error("Please select a user to delete.")
 
 def show_add_order():
-    
-    
     st.title("Add Order")
     
     with st.form("add_order_form"):
@@ -1149,22 +1161,24 @@ def show_add_order():
         
         col1, col2 = st.columns(2)
         with col1:
-            quantity = st.number_input("Quantity", min_value=1, value=1)
+            quantity = st.number_input("Quantity", min_value=1, value=1, key="quantity")
         with col2:
-            price = st.number_input("Price per Unit (₹)", min_value=0.01, value=0.01, step=0.01)
+            price = st.number_input("Price per Unit (₹)", min_value=0.01, value=0.01, step=0.01, key="price")
         
         basic_price = quantity * price
         st.write(f"**Basic Price: ₹{basic_price:.2f}**")
         
         col1, col2 = st.columns(2)
         with col1:
-            gst = st.number_input("GST (%)", min_value=0.0, value=0.0, step=0.1)
+            gst = st.number_input("GST (%)", min_value=0.0, value=0.0, step=0.1, key="gst")
         with col2:
-            advance_payment = st.number_input("Advance Payment (₹)", min_value=0.0, value=0.0, step=0.01)
+            advance_payment = st.number_input("Advance Payment (₹)", min_value=0.0, value=0.0, step=0.01, key="advance_payment")
         
         total_amount_with_gst = basic_price + (basic_price * (gst / 100))
         pending_amount = total_amount_with_gst - advance_payment
         
+        # Display calculations in real-time
+        st.markdown("---")
         st.write(f"**Total Amount with GST: ₹{total_amount_with_gst:.2f}**")
         st.write(f"**Pending Amount: ₹{pending_amount:.2f}**")
         

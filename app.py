@@ -63,166 +63,51 @@ def init_db():
     try:
         supabase.table("users").select("*").limit(1).execute()
         logger.info("Users table exists")
-    except Exception as e:
-        logger.error(f"Users table does not exist: {e}")
-        st.error("The 'users' table is missing in Supabase. Please create it using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-CREATE TABLE users (
-    username TEXT PRIMARY KEY,
-    password TEXT NOT NULL,
-    organization TEXT NOT NULL,
-    is_admin INTEGER DEFAULT 0
-);
-        """)
-        raise Exception("Users table missing. Please create it and rerun the application.")
 
-    try:
+
+    
         supabase.table("orders").select("*").limit(1).execute()
         logger.info("Orders table exists")
-    except Exception as e:
-        logger.error(f"Orders table does not exist: {e}")
-        st.error("The 'orders' table is missing in Supabase. Please create it using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-CREATE TABLE orders (
-    order_id INTEGER,
-    org TEXT,
-    receiver_name TEXT,
-    date TEXT,
-    expected_delivery_date TEXT,
-    product TEXT,
-    description TEXT,
-    quantity INTEGER,
-    delivered_quantity INTEGER DEFAULT 0,
-    price REAL,
-    basic_price REAL,
-    gst REAL,
-    advance_payment REAL,
-    total_amount_with_gst REAL,
-    pending_amount REAL,
-    status TEXT,
-    created_by TEXT,
-    PRIMARY KEY (order_id, org)
-);
-        """)
-        raise Exception("Orders table missing. Please create it and rerun the application.")
+    
 
-    try:
+    
         supabase.table("deliveries").select("*").limit(1).execute()
         logger.info("Deliveries table exists")
-    except Exception as e:
-        logger.error(f"Deliveries table does not exist: {e}")
-        st.error("The 'deliveries' table is missing in Supabase. Please create it using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-CREATE TABLE deliveries (
-    delivery_id SERIAL PRIMARY KEY,
-    order_id INTEGER,
-    org TEXT,
-    delivery_quantity INTEGER,
-    delivery_date TEXT,
-    total_amount_received REAL,
-    public_id TEXT,
-    url TEXT,
-    file_name TEXT,
-    upload_date TEXT,
-    resource_type TEXT,
-    FOREIGN KEY (order_id, org) REFERENCES orders (order_id, org)
-);
-        """)
-        raise Exception("Deliveries table missing. Please create it and rerun the application.")
+    
 
     # Check and add total_amount_received column to deliveries if not exists
-    try:
+    
         response = supabase.table("deliveries").select("total_amount_received").limit(1).execute()
         logger.info("total_amount_received column exists in deliveries table")
-    except Exception as e:
-        logger.error(f"total_amount_received column does not exist in deliveries table: {e}")
-        st.error("The 'total_amount_received' column is missing in the 'deliveries' table. Please add it using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-ALTER TABLE deliveries ADD COLUMN total_amount_received REAL;
-        """)
-        raise Exception("total_amount_received column missing in deliveries table. Please add it and rerun the application.")
-
-    # Check and remove base_price column from deliveries if exists
     
-        
-
-    try:
+     
+    
         supabase.table("ewaybills").select("*").limit(1).execute()
         logger.info("Ewaybills table exists")
-    except Exception as e:
-        logger.error(f"Ewaybills table does not exist: {e}")
-        st.error("The 'ewaybills' table is missing in Supabase. Please create it using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-CREATE TABLE ewaybills (
-    order_id INTEGER,
-    org TEXT,
-    public_id TEXT,
-    url TEXT,
-    file_name TEXT,
-    upload_date TEXT,
-    resource_type TEXT,
-    PRIMARY KEY (order_id, org),
-    FOREIGN KEY (order_id, org) REFERENCES orders (order_id, org)
-);
-        """)
-        raise Exception("Ewaybills table missing. Please create it and rerun the application.")
-
-    # Check and add is_admin column to users if not exists
-    try:
+    
+    
         response = supabase.table("users").select("is_admin").limit(1).execute()
         logger.info("is_admin column exists in users table")
-    except Exception as e:
-        logger.error(f"is_admin column does not exist in users table: {e}")
-        st.error("The 'is_admin' column is missing in the 'users' table. Please add it using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0;
-        """)
-        raise Exception("is_admin column missing. Please add it and rerun the application.")
-
+    
     # Check and add delivered_quantity column to orders if not exists
-    try:
+    
         response = supabase.table("orders").select("delivered_quantity").limit(1).execute()
         logger.info("delivered_quantity column exists in orders table")
-    except Exception as e:
-        logger.error(f"delivered_quantity column does not exist in orders table: {e}")
-        st.error("The 'delivered_quantity' column is missing in the 'orders' table. Please add it using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-ALTER TABLE orders ADD COLUMN delivered_quantity INTEGER DEFAULT 0;
-        """)
-        raise Exception("delivered_quantity column missing. Please add it and rerun the application.")
-
+    
     # Check and add resource_type column to ewaybills if not exists
-    try:
+    
         response = supabase.table("ewaybills").select("resource_type").limit(1).execute()
         logger.info("resource_type column exists in ewaybills table")
-    except Exception as e:
-        logger.error(f"resource_type column does not exist in ewaybills table: {e}")
-        st.error("The 'resource_type' column is missing in the 'ewaybills' table. Please add it and populate existing records using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-ALTER TABLE ewaybills ADD COLUMN resource_type TEXT;
-UPDATE ewaybills SET resource_type = CASE
-    WHEN file_name LIKE '%.pdf' THEN 'raw'
-    ELSE 'image'
-END;
-        """)
-        raise Exception("resource_type column missing. Please add it and rerun the application.")
-
+    
     # Check and add resource_type column to deliveries if not exists
-    try:
+    
         response = supabase.table("deliveries").select("resource_type").limit(1).execute()
         logger.info("resource_type column exists in deliveries table")
-    except Exception as e:
-        logger.error(f"resource_type column does not exist in deliveries table: {e}")
-        st.error("The 'resource_type' column is missing in the 'deliveries' table. Please add it and populate existing records using the following SQL in the Supabase SQL Editor:")
-        st.code("""
-ALTER TABLE deliveries ADD COLUMN resource_type TEXT;
-UPDATE deliveries SET resource_type = CASE
-    WHEN file_name LIKE '%.pdf' THEN 'raw'
-    ELSE 'image'
-END;
-        """)
-        raise Exception("resource_type column missing in deliveries table. Please add it and rerun the application.")
 
+    except Exception as e:
+        st.error("An unexpected error occurred. Please try again or contact support.")
+        logger.error(f"Somthing went wrong!")
+        
 init_db()
 
 # Initialize session state
@@ -393,6 +278,7 @@ def display_header():
 
 # Helper functions for database operations
 def load_users():
+  try:
     response = supabase.table("users").select("*").execute()
     users = {row["username"]: {
         "password": row["password"],
@@ -400,6 +286,8 @@ def load_users():
         "is_admin": row["is_admin"]
     } for row in response.data}
     return users
+  except Exception :
+      st.error("somthing went wrong !")
 
 def save_user(username, password, organization, is_admin=0):
     try:
@@ -411,10 +299,12 @@ def save_user(username, password, organization, is_admin=0):
         }).execute()
         return True
     except Exception as e:
-        logger.error(f"Error saving user {username}: {e}")
+        logger.error(f"Error saving user {username}")
+        st.error(f"Error saving user {username}: {e}")
         return False
 
 def load_orders():
+  try:
     response = supabase.table("orders").select("*").execute()
     df = pd.DataFrame(response.data)
     return df if not df.empty else pd.DataFrame(columns=[
@@ -422,16 +312,22 @@ def load_orders():
         "product", "description", "quantity", "price", "basic_price", "gst",
         "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
     ])
+  except Exception :
+      st.error("somthing went wrong !")
 
 def save_orders(df):
+  try:
     # Convert DataFrame to list of dictionaries
     data = df.to_dict(orient="records")
     # Delete existing records and insert new ones
     supabase.table("orders").delete().neq("order_id", -1).execute()  # Clear table
     if data:
         supabase.table("orders").insert(data).execute()
+  except Exception :
+      st.error("somthing went wrong !")
 
 def load_ewaybills():
+  try:
     response = supabase.table("ewaybills").select("*").execute()
     ewaybills = {f"{row['order_id']}_{row['org']}": {
         "public_id": row["public_id"],
@@ -441,8 +337,11 @@ def load_ewaybills():
         "resource_type": row["resource_type"] if row["resource_type"] else ("raw" if row["file_name"].lower().endswith(".pdf") else "image")
     } for row in response.data}
     return ewaybills
+  except Exception :
+      st.error("somthing went wrong !")
 
 def save_ewaybill(order_id, org, public_id, url, file_name, upload_date, resource_type):
+  try:
     supabase.table("ewaybills").upsert({
         "order_id": order_id,
         "org": org,
@@ -452,9 +351,12 @@ def save_ewaybill(order_id, org, public_id, url, file_name, upload_date, resourc
         "upload_date": upload_date,
         "resource_type": resource_type
     }).execute()
+  except Exception :
+      st.error("somthing went wrong !")
 
 # Authentication functions
 def login(username, password):
+  try:
     users = load_users()
     if username in users and users[username]["password"] == password:
         st.session_state.authenticated = True
@@ -463,8 +365,11 @@ def login(username, password):
         st.session_state.is_admin = (username == admin_username and password == admin_password)
         return True
     return False
+  except Exception :
+      st.error("somthing went wrong !")
 
 def signup(username, password, organization):
+  try:
     users = load_users()
     if username in users:
         st.error("Username already exists. Please choose a different username.")
@@ -488,8 +393,11 @@ def signup(username, password, organization):
     else:
         st.error("Failed to create account. Please try again.")
         return False
+  except Exception :
+      st.error("somthing went wrong !")
 
 def load_deliveries(order_id=None, org=None):
+  try:
     query = supabase.table("deliveries").select("*")
     if order_id is not None and org is not None:
         query = query.eq("order_id", order_id).eq("org", org)
@@ -499,6 +407,8 @@ def load_deliveries(order_id=None, org=None):
         "org", "delivery_id", "order_id", "delivery_quantity", "delivery_date",
         "total_amount_received", "public_id", "url", "file_name", "upload_date", "resource_type"
     ])
+  except Exception :
+      st.error("somthing went wrong !")
 
 
 def delete_delivery(order_id, delivery_id):
@@ -547,7 +457,8 @@ def delete_delivery(order_id, delivery_id):
                 else:
                     logger.warning(f"Cloudinary file deletion issue: {public_id}, result: {result}")
             except Exception as e:
-                logger.error(f"Error deleting Cloudinary file {public_id}: {e}")
+                logger.error(f"Error deleting Cloudinary file {public_id}")
+                st.error(f"Error deleting Cloudinary file {public_id}")
 
         # Delete delivery from database
         supabase.table("deliveries").delete().eq("order_id", order_id).eq("delivery_id", delivery_id).eq("org", st.session_state.current_org).execute()
@@ -582,9 +493,11 @@ def delete_delivery(order_id, delivery_id):
         )
         return True, "Delivery deleted successfully"
     except Exception as e:
-        logger.error(f"Error deleting delivery {delivery_id} for order {order_id}: {e}")
-        return False, f"Error deleting delivery: {str(e)}"
+        logger.error(f"Error deleting delivery {delivery_id} for order {order_id}")
+        st.error(f"Error deleting delivery {delivery_id} for order {order_id}")
+        return False, f"Error deleting delivery"
 def delete_account(username, by_admin=False):
+  try:
     users = load_users()
     if username not in users:
         logger.error(f"User {username} not found for deletion")
@@ -615,7 +528,8 @@ def delete_account(username, by_admin=False):
                     else:
                         logger.warning(f"Cloudinary file deletion issue: {delivery['public_id']}, result: {result}")
                 except Exception as e:
-                    logger.error(f"Error deleting Cloudinary file {delivery['public_id']}: {e}")
+                    logger.error(f"Error deleting Cloudinary file {delivery['public_id']}")
+                    st.error(f"Error deleting Cloudinary file {delivery['public_id']}")
 
     # Delete from database
     try:
@@ -628,7 +542,8 @@ def delete_account(username, by_admin=False):
         supabase.table("users").delete().eq("username", username).execute()
         logger.info(f"Deleted user {username}")
     except Exception as e:
-        logger.error(f"Database deletion error: {e}")
+        logger.error(f"Database deletion error")
+        st.error(f"Database deletion error")
         return False
 
     # Verify Cloudinary cleanup
@@ -641,7 +556,8 @@ def delete_account(username, by_admin=False):
             else:
                 logger.info(f"No remaining Cloudinary {resource_type} files for org {org}")
     except Exception as e:
-        logger.error(f"Error verifying Cloudinary cleanup for org {org}: {e}")
+        logger.error(f"Error verifying Cloudinary cleanup for org {org}")
+        st.error("An unexpected error occurred. Please try again or contact support.")
 
     if not by_admin:
         st.session_state.authenticated = False
@@ -651,6 +567,8 @@ def delete_account(username, by_admin=False):
 
     logger.info(f"Account deletion completed for {username}. Deleted {deleted_files} Cloudinary files")
     return True
+  except Exception :
+      st.error("somthing went wrong !")
 
 def logout():
     st.session_state.authenticated = False
@@ -663,6 +581,7 @@ def logout():
     st.session_state.editing_order = None
     st.session_state.show_delete_account = False
 def add_order(receiver_name, date, expected_delivery_date, product, description, quantity, price, gst, advance_payment):
+  try:    
     orders = load_orders()
     
     basic_price = quantity * price
@@ -700,6 +619,8 @@ def add_order(receiver_name, date, expected_delivery_date, product, description,
     st.session_state.clear_form = True
     logger.info(f"Added order {order_id} for org {st.session_state.current_org}")
     return True
+  except Exception :
+      st.error("somthing went wrong !")
 # Order management functions
 def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_received, file_data=None, file_name=None):
     try:
@@ -806,17 +727,24 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
         logger.info(f"Added delivery #{next_delivery_id} of {delivery_quantity} units for order {order_id}, amount received: ₹{total_amount_received:.2f}, new pending: ₹{new_pending:.2f}")
         return True, "Delivery added successfully"
     except Exception as e:
-        logger.error(f"Error adding delivery for order {order_id}: {e}")
-        return False, f"Error adding delivery: {str(e)}"
+        logger.error(f"Error adding delivery for order {order_id}")
+        st.error("An unexpected error occurred. Please try again or contact support.")
+        return False, f"Error adding delivery:"
 def export_to_excel(df):
+  try:
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False)
     return output.getvalue()
+  except Exception :
+      st.error("somthing went wrong !")
 
 def update_order_status(order_id, new_status):
+  try:
     supabase.table("orders").update({"status": new_status}).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
     logger.info(f"Updated status of order {order_id} to {new_status}")
+  except Exception :
+      st.error("somthing went wrong !")
 
 def upload_ewaybill(order_id, file_data, file_name):
     try:
@@ -848,7 +776,8 @@ def upload_ewaybill(order_id, file_data, file_name):
             response.raise_for_status()
             logger.info(f"Uploaded e-way bill for order {order_id}, public_id: {public_id}, url: {secure_url}, resource_type: {resource_type}")
         except requests.RequestException as e:
-            logger.error(f"Uploaded file {public_id} not accessible: {e}")
+            logger.error(f"Uploaded file {public_id} not accessible")
+            st.error(f"Uploaded file {public_id} not accessible")
             return False
         
         save_ewaybill(
@@ -863,7 +792,8 @@ def upload_ewaybill(order_id, file_data, file_name):
         
         return True
     except Exception as e:
-        logger.error(f"Error uploading e-way bill for order {order_id}: {e}")
+        logger.error(f"Error uploading e-way bill for order {order_id}")
+        st.error("An unexpected error occurred. Please try again or contact support.")
         return False
 
 
@@ -884,7 +814,8 @@ def delete_order(order_id):
                         logger.warning(
                             f"Cloudinary delivery file deletion issue: {delivery['public_id']}, result: {result}")
                 except Exception as e:
-                    logger.error(f"Error deleting Cloudinary delivery file {delivery['public_id']}: {e}")
+                    logger.error(f"Error deleting Cloudinary delivery file {delivery['public_id']}")
+                    st.error(f"Error deleting Cloudinary delivery file {delivery['public_id']}")
 
         # Delete deliveries from database
         supabase.table("deliveries").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
@@ -905,7 +836,8 @@ def delete_order(order_id):
                         logger.warning(
                             f"Cloudinary e-way bill deletion issue: {ewaybill['public_id']}, result: {result}")
                 except Exception as e:
-                    logger.error(f"Error deleting Cloudinary e-way bill {ewaybill['public_id']}: {e}")
+                    logger.error(f"Error deleting Cloudinary e-way bill {ewaybill['public_id']}")
+                    st.error(f"Error deleting Cloudinary e-way bill {ewaybill['public_id']}")
 
         # Delete e-way bill from database
         supabase.table("ewaybills").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
@@ -920,13 +852,14 @@ def delete_order(order_id):
         st.session_state.form_status = "success"
         return True
     except Exception as e:
-        logger.error(f"Error deleting order {order_id}: {e}")
+        logger.error(f"Error deleting order {order_id}")
         st.session_state.form_submitted = True
-        st.session_state.form_message = f"Error deleting order: {str(e)}"
+        st.session_state.form_message = f"Error deleting order:"
         st.session_state.form_status = "error"
         return False
 
 def edit_order(order_id, receiver_name, date, expected_delivery_date, product, description, quantity, price, gst, advance_payment):
+  try: 
     # Check if new quantity is valid
     order_response = supabase.table("orders").select("delivered_quantity").eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
     if order_response.data:
@@ -960,23 +893,35 @@ def edit_order(order_id, receiver_name, date, expected_delivery_date, product, d
         return True
     logger.warning(f"Order {order_id} not found for editing")
     return False
+  except Exception :
+      st.error("somthing went wrong !")
 def clear_form_feedback():
     st.session_state.form_submitted = False
     st.session_state.form_message = ""
     st.session_state.form_status = ""
 
 def get_org_orders():
-    response = supabase.table("orders").select("*").eq("org", st.session_state.current_org).execute()
-    df = pd.DataFrame(response.data)
-    return df if not df.empty else pd.DataFrame(columns=[
-        "order_id", "org", "receiver_name", "date", "expected_delivery_date",
-        "product", "description", "quantity", "price", "basic_price", "gst",
-        "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
-    ])
+    try:
+        response = supabase.table("orders").select("*").eq("org", st.session_state.current_org).execute()
+        df = pd.DataFrame(response.data)
+        return df if not df.empty else pd.DataFrame(columns=[
+            "order_id", "org", "receiver_name", "date", "expected_delivery_date",
+            "product", "description", "quantity", "price", "basic_price", "gst",
+            "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
+        ])
+    except Exception as e:
+        st.error("Something went wrong. Please try again or contact support.")
+        logger.error(f"Error fetching orders for org {st.session_state.current_org}: {str(e)}")
+        return pd.DataFrame(columns=[
+            "order_id", "org", "receiver_name", "date", "expected_delivery_date",
+            "product", "description", "quantity", "price", "basic_price", "gst",
+            "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
+        ])
 
 # Analytics functions
 
 def get_total_revenue(df):
+  try:
     if df.empty:
         return 0
     # Calculate total revenue as advance_payment + sum of total_amount_received from deliveries
@@ -986,8 +931,11 @@ def get_total_revenue(df):
         delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
         revenue += row["advance_payment"] + delivery_amount
     return revenue
+  except Exception :
+      st.error("somthing went wrong !")
 
 def get_monthly_summary(df):
+  try:
     if df.empty:
         return {"total": 0, "completed": 0, "pending": 0, "revenue": 0, "avg_order_value": 0, "mom_growth": 0}
     
@@ -1030,6 +978,8 @@ def get_monthly_summary(df):
         result["mom_growth"] = 0
     
     return result
+  except Exception :
+      st.error("somthing went wrong !")
 
 # UI Components
 def show_login_page():
@@ -1117,8 +1067,8 @@ def show_sidebar():
 
 def show_admin_panel():
     
-    st.title("Admin Panel")
-    
+  st.title("Admin Panel")
+  try:  
     if not st.session_state.is_admin:
         st.error("Access denied. Admin privileges required.")
         return
@@ -1148,6 +1098,8 @@ def show_admin_panel():
                 st.error(f"Failed to delete user {selected_user}.")
         else:
             st.error("Please select a user to delete.")
+  except Exception as e:
+      st.error("somthing went wrong !")
 
 def show_add_order():
     st.title("Add Order")
@@ -1530,7 +1482,7 @@ def show_dashboard():
             r_squared = model.score(X, y)
             st.metric("Forecast Reliability (R²)", f"{r_squared:.2f}")
         except Exception as e:
-            st.error(f"Could not create forecast: {str(e)}")
+            st.error(f"Could not create forecast")
     else:
         st.info("Need at least 10 orders to create a sales forecast.")
     
@@ -1846,7 +1798,7 @@ def show_manage_orders():
                                     key=f"download_delivery_ewaybill_{order_id}_{delivery['delivery_id']}"
                                 )
                             except requests.RequestException as e:
-                                st.warning(f"E-way bill not accessible ({e}).")
+                                st.warning(f"E-way bill not accessible ")
                         
                         if st.button("Delete Delivery", key=f"delete_delivery_{order_id}_{delivery['delivery_id']}"):
                             success, message = delete_delivery(order_id, delivery["delivery_id"])

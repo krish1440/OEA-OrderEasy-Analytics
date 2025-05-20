@@ -19,6 +19,7 @@ from scipy import stats
 import re
 import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
+import zipfile
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1060,9 +1061,27 @@ def show_sidebar():
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("Contact Us")
-    st.sidebar.write("📧 krishchaudhary144@gmail.com")
-    st.sidebar.write("📞 +91 6353160662")
-        
+    st.sidebar.markdown("""
+        <div style='font-size: 16px; padding: 10px; border-radius: 5px; background-color: #f0f2f6;'>
+            <p style='margin: 5px 0;'>
+                📧 <a href='mailto:krishchaudhary144@gmail.com' style='color: #1a73e8; text-decoration: none;'>
+                    krishchaudhary144@gmail.com
+                </a>
+            </p>
+            <p style='margin: 5px 0;'>
+                📞 <a href='tel:+916353160662' style='color: #1a73e8; text-decoration: none;'>
+                    +91 6353160662
+                </a>
+            </p>
+        </div>
+        <style>
+            a:hover {
+                color: #d93025;
+                text-decoration: underline;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+    
     return menu
 
 def show_admin_panel():
@@ -1852,8 +1871,11 @@ def show_manage_orders():
                             st.session_state.form_message = message
                             st.session_state.form_status = "error"
                         st.rerun()
+
+import shutil
+import tempfile
+from datetime import datetime, timedelta
 def show_export_reports():
-    
     st.title("Export Reports")
     
     org_orders = get_org_orders()
@@ -1869,8 +1891,8 @@ def show_export_reports():
         status_filter = st.selectbox("Status", ["All", "Pending", "Completed"])
     with col2:
         date_range = st.date_input("Date Range", 
-                                  value=[], 
-                                  help="Select a date range to filter orders.")
+                                 value=[], 
+                                 help="Select a date range to filter orders.")
     
     filtered_orders = org_orders.copy()
     if status_filter != "All":
@@ -1893,7 +1915,7 @@ def show_export_reports():
     
     st.dataframe(filtered_orders)
     
-    col1, col2= st.columns(2)
+    col1, col2 = st.columns(2)
     with col1:
         if st.button("Export to Excel"):
             excel_data = export_to_excel(filtered_orders)
@@ -1912,6 +1934,8 @@ def show_export_reports():
     if not org_orders.empty:
         org_orders["date"] = pd.to_datetime(org_orders["date"])
         org_orders["month"] = org_orders["date"].dt.strftime("%Y-%m")
+        org_orders["year"] = org_orders["date"].dt.year
+        
         # Calculate revenue for each order
         org_orders["revenue"] = 0.0
         for idx, row in org_orders.iterrows():
@@ -1919,13 +1943,26 @@ def show_export_reports():
             delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
             org_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
         
-        monthly_revenue = org_orders.groupby("month").agg({
+        # Year range filter for monthly revenue
+        years = sorted(org_orders["year"].unique())
+        year_range = st.slider("Select Year Range for Monthly Revenue",
+                              min_value=int(min(years)),
+                              max_value=int(max(years)),
+                              value=(int(min(years)), int(max(years))),
+                              step=1)
+        
+        # Filter orders by selected year range
+        filtered_revenue = org_orders[
+            (org_orders["year"] >= year_range[0]) & 
+            (org_orders["year"] <= year_range[1])
+        ]
+        
+        monthly_revenue = filtered_revenue.groupby("month").agg({
             "revenue": "sum"
         }).reset_index()
         monthly_revenue.columns = ["Month", "Total Revenue"]
         
-        # Add yearly revenue calculation
-        org_orders["year"] = org_orders["date"].dt.year
+        # Yearly revenue calculation
         yearly_revenue = org_orders.groupby("year").agg({
             "revenue": "sum"
         }).reset_index()
@@ -1947,7 +1984,7 @@ def show_export_reports():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         else:
-            st.info("No orders to calculate revenue.")
+            st.info("No orders to calculate revenue for selected year range.")
         
         st.write("**Yearly Revenue**")
         if not yearly_revenue.empty:
@@ -1964,87 +2001,189 @@ def show_export_reports():
                 )
         else:
             st.info("No orders to calculate yearly revenue.")
+        
+        st.subheader("Export All Deliveries")
+        default_end_date = datetime.now().date()
+        default_start_date = default_end_date - timedelta(days=365)
+        delivery_date_range = st.date_input("Delivery Date Range", 
+                                       value=(default_start_date, default_end_date), 
+                                       help="Select a date range to filter deliveries for export.")
     
+        if st.button("Export All Deliveries to Zip"):
+        # Create a temporary directory to store Excel files
+         with tempfile.TemporaryDirectory() as temp_dir:
+            for _, row in filtered_orders.iterrows():
+                order_id = row["order_id"]
+                org = row["org"]
+                receiver_name = row["receiver_name"]
+                deliveries = load_deliveries(order_id, org)
+                
+                if not deliveries.empty:
+                    # Apply date range filter to deliveries
+                    if len(delivery_date_range) == 2:
+                        delivery_start_date, delivery_end_date = delivery_date_range
+                        deliveries["delivery_date"] = pd.to_datetime(deliveries["delivery_date"])
+                        deliveries = deliveries[
+                            (deliveries["delivery_date"] >= pd.Timestamp(delivery_start_date)) & 
+                            (deliveries["delivery_date"] <= pd.Timestamp(delivery_end_date))
+                        ]
+                    
+                    if not deliveries.empty:
+                        # Prepare delivery details for export
+                        export_deliveries = deliveries[[
+                            "delivery_id", "delivery_quantity", "delivery_date", "total_amount_received"
+                        ]].rename(columns={
+                            "delivery_id": "Delivery ID",
+                            "delivery_quantity": "Quantity",
+                            "delivery_date": "Date",
+                            "total_amount_received": "Total Amount Received"
+                        })
+                        
+                        # Get order details for header
+                        order_details = filtered_orders[
+                            (filtered_orders["order_id"] == order_id) & (filtered_orders["org"] == org)
+                        ][[
+                            "order_id", "receiver_name", "quantity", "advance_payment", "gst", 
+                            "total_amount_with_gst", "pending_amount", "product", "description", 
+                            "date", "expected_delivery_date", "status", "created_by"
+                        ]].rename(columns={
+                            "order_id": "Order ID",
+                            "receiver_name": "Receiver Name",
+                            "quantity": "Total Quantity",
+                            "advance_payment": "Advance Payment",
+                            "gst": "GST%",
+                            "total_amount_with_gst": "Total Amount with GST",
+                            "pending_amount": "Pending Amount",
+                            "product": "Product",
+                            "description": "Description",
+                            "date": "Order Date",
+                            "expected_delivery_date": "Expected Delivery Date",
+                            "status": "Status",
+                            "created_by": "Created By"
+                        })
+                        
+                        # Create Excel file for this order
+                        output = BytesIO()
+                        workbook = openpyxl.Workbook()
+                        sheet = workbook.active
+                        sheet.title = "Deliveries"
+                        
+                        # Write order details as header
+                        sheet.append(["Order Details"])
+                        for r in dataframe_to_rows(order_details, index=False, header=True):
+                            sheet.append(r)
+                        sheet.append([]) 
+                        
+                        # Write deliveries
+                        sheet.append(["Delivery Details"])
+                        for r in dataframe_to_rows(export_deliveries, index=False, header=True):
+                            sheet.append(r)
+                        
+                        workbook.save(output)
+                        output.seek(0)
+                        
+                        # Save Excel file to temporary directory
+                        safe_receiver_name = receiver_name.replace(" ", "_").replace("/", "_")
+                        excel_file_path = os.path.join(temp_dir, f"{order_id}_{safe_receiver_name}.xlsx")
+                        with open(excel_file_path, "wb") as f:
+                            f.write(output.getvalue())
+            
+            # Create zip file from temporary directory
+            zip_buffer = BytesIO()
+            zip_path = os.path.join(temp_dir, "all_deliveries.zip")
+            shutil.make_archive(os.path.join(temp_dir, "all_deliveries"), 'zip', temp_dir)
+            with open(zip_path, "rb") as f:
+                zip_buffer.write(f.read())
+            
+            zip_buffer.seek(0)
+            st.download_button(
+                label="Download All Deliveries Zip",
+                data=zip_buffer.getvalue(),
+                file_name="all_deliveries.zip",
+                mime="application/zip"
+            )
+    
+
         st.subheader("Export Deliveries for a Specific Order")
         order_options = [(row["order_id"], row["org"], row["product"]) for _, row in filtered_orders.iterrows()]
         order_display = [f"Order {order_id} - {product}" for order_id, org, product in order_options]
         selected_order = st.selectbox("Select Order", order_display)
     
         if selected_order:
-          order_id, org, _ = order_options[order_display.index(selected_order)]
-          deliveries = load_deliveries(order_id, org)
+            order_id, org, _ = order_options[order_display.index(selected_order)]
+            deliveries = load_deliveries(order_id, org)
         
-        if deliveries.empty:
-            st.info(f"No deliveries found for Order {order_id} - {org}.")
-        else:
-            st.write("**Deliveries**")
-            for _, delivery in deliveries.iterrows():
-                st.write(f"**Delivery ID**: {delivery['delivery_id']}")
-                st.write(f"**Quantity**: {delivery['delivery_quantity']}")
-                st.write(f"**Date**: {delivery['delivery_date']}")
-                st.write(f"**Total Amount Received**: ₹{delivery['total_amount_received']:.2f}")
-                st.markdown("---")
-            
-            if st.button("Export Deliveries to Excel"):
-                # Prepare delivery details for export
-                export_deliveries = deliveries[[
-                    "delivery_id", "delivery_quantity", "delivery_date", "total_amount_received"
-                ]].rename(columns={
-                    "delivery_id": "Delivery ID",
-                    "delivery_quantity": "Quantity",
-                    "delivery_date": "Date",
-                    "total_amount_received": "Total Amount Received"
-                })
+            if deliveries.empty:
+                st.info(f"No deliveries found for Order {order_id} - {org}.")
+            else:
+                st.write("**Deliveries**")
+                for _, delivery in deliveries.iterrows():
+                    st.write(f"**Delivery ID**: {delivery['delivery_id']}")
+                    st.write(f"**Quantity**: {delivery['delivery_quantity']}")
+                    st.write(f"**Date**: {delivery['delivery_date']}")
+                    st.write(f"**Total Amount Received**: ₹{delivery['total_amount_received']:.2f}")
+                    st.markdown("---")
                 
-                # Get order details for header
-                order_details = filtered_orders[
-                    (filtered_orders["order_id"] == order_id) & (filtered_orders["org"] == org)
-                ][[
-                    "order_id", "receiver_name", "quantity", "advance_payment", "gst", 
-                    "total_amount_with_gst", "pending_amount", "product", "description", 
-                    "date", "expected_delivery_date", "status", "created_by"
-                ]].rename(columns={
-                    "order_id": "Order ID",
-                    "receiver_name": "Receiver Name",
-                    "quantity": "Total Quantity",
-                    "advance_payment": "Advance Payment",
-                    "gst": "GST%",
-                    "total_amount_with_gst": "Total Amount with GST",
-                    "pending_amount": "Pending Amount",
-                    "product": "Product",
-                    "description": "Description",
-                    "date": "Order Date",
-                    "expected_delivery_date": "Expected Delivery Date",
-                    "status": "Status",
-                    "created_by": "Created By"
-                })
-                
-                # Create Excel file with order details as header and deliveries below
-                output = BytesIO()
-                workbook = openpyxl.Workbook()
-                sheet = workbook.active
-                sheet.title = "Deliveries"
-                
-                # Write order details as header
-                sheet.append(["Order Details"])
-                for r in dataframe_to_rows(order_details, index=False, header=True):
-                    sheet.append(r)
-                sheet.append([]) 
-                
-                # Write deliveries
-                sheet.append(["Delivery Details"])
-                for r in dataframe_to_rows(export_deliveries, index=False, header=True):
-                    sheet.append(r)
-                
-                workbook.save(output)
-                output.seek(0)
-                
-                st.download_button(
-                    label="Download Deliveries Excel",
-                    data=output.getvalue(),
-                    file_name=f"deliveries_order_{order_id}_{org}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                if st.button("Export Deliveries to Excel"):
+                    # Prepare delivery details for export
+                    export_deliveries = deliveries[[
+                        "delivery_id", "delivery_quantity", "delivery_date", "total_amount_received"
+                    ]].rename(columns={
+                        "delivery_id": "Delivery ID",
+                        "delivery_quantity": "Quantity",
+                        "delivery_date": "Date",
+                        "total_amount_received": "Total Amount Received"
+                    })
+                    
+                    # Get order details for header
+                    order_details = filtered_orders[
+                        (filtered_orders["order_id"] == order_id) & (filtered_orders["org"] == org)
+                    ][[
+                        "order_id", "receiver_name", "quantity", "advance_payment", "gst", 
+                        "total_amount_with_gst", "pending_amount", "product", "description", 
+                        "date", "expected_delivery_date", "status", "created_by"
+                    ]].rename(columns={
+                        "order_id": "Order ID",
+                        "receiver_name": "Receiver Name",
+                        "quantity": "Total Quantity",
+                        "advance_payment": "Advance Payment",
+                        "gst": "GST%",
+                        "total_amount_with_gst": "Total Amount with GST",
+                        "pending_amount": "Pending Amount",
+                        "product": "Product",
+                        "description": "Description",
+                        "date": "Order Date",
+                        "expected_delivery_date": "Expected Delivery Date",
+                        "status": "Status",
+                        "created_by": "Created By"
+                    })
+                    
+                    # Create Excel file with order details as header and deliveries below
+                    output = BytesIO()
+                    workbook = openpyxl.Workbook()
+                    sheet = workbook.active
+                    sheet.title = "Deliveries"
+                    
+                    # Write order details as header
+                    sheet.append(["Order Details"])
+                    for r in dataframe_to_rows(order_details, index=False, header=True):
+                        sheet.append(r)
+                    sheet.append([]) 
+                    
+                    # Write deliveries
+                    sheet.append(["Delivery Details"])
+                    for r in dataframe_to_rows(export_deliveries, index=False, header=True):
+                        sheet.append(r)
+                    
+                    workbook.save(output)
+                    output.seek(0)
+                    
+                    st.download_button(
+                        label="Download Deliveries Excel",
+                        data=output.getvalue(),
+                        file_name=f"deliveries_order_{order_id}_{org}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
 
 def show_account_settings():
     

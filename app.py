@@ -694,7 +694,7 @@ def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_receiv
                 )
             
             url = upload_result["secure_url"]
-            upload_date = datetime.datetime.now().isoformat()
+            upload_date = datetime.now().isoformat()
 
         # Insert delivery with payment details
         delivery_data = {
@@ -787,7 +787,7 @@ def upload_ewaybill(order_id, file_data, file_name):
             public_id=public_id,
             url=secure_url,
             file_name=file_name,
-            upload_date=datetime.datetime.now().isoformat(),
+            upload_date=datetime.now().isoformat(),
             resource_type=resource_type
         )
         
@@ -940,8 +940,8 @@ def get_monthly_summary(df):
     if df.empty:
         return {"total": 0, "completed": 0, "pending": 0, "revenue": 0, "avg_order_value": 0, "mom_growth": 0}
     
-    current_month = datetime.datetime.now().month
-    current_year = datetime.datetime.now().year
+    current_month = datetime.now().month
+    current_year = datetime.now().year
     
     df["date"] = pd.to_datetime(df["date"])
     monthly_df = df[(df["date"].dt.month == current_month) & (df["date"].dt.year == current_year)]
@@ -1199,8 +1199,8 @@ def show_dashboard():
         st.metric("Total Units Delivered", total_delivered)
     
     st.subheader("Current Month Metrics")
-    current_month = datetime.datetime.now().month
-    current_year = datetime.datetime.now().year
+    current_month = datetime.now().month
+    current_year = datetime.now().year
     monthly_df = org_orders[(org_orders["date"].dt.month == current_month) & (org_orders["date"].dt.year == current_year)]
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -1372,7 +1372,7 @@ def show_dashboard():
         "date": "min"
       }).reset_index()
       customer_metrics.columns = ["receiver_name", "total_spent", "order_count", "first_order"]
-      customer_metrics["customer_age"] = (datetime.datetime.now() - customer_metrics["first_order"]).dt.days / 30
+      customer_metrics["customer_age"] = (datetime.now() - customer_metrics["first_order"]).dt.days / 30
       customer_metrics["clv"] = customer_metrics["total_spent"] / customer_metrics["customer_age"].replace(0, 1)
       top_clv = customer_metrics.sort_values("clv", ascending=False).head(5)
       if not top_clv.empty:
@@ -1535,7 +1535,7 @@ def show_dashboard():
     
     st.subheader("🌟 Customer Segmentation (RFM Analysis)")
     if len(org_orders) >= 5:
-        current_date = datetime.datetime.now()
+        current_date = datetime.now()
         rfm = org_orders.groupby("receiver_name").agg({
             "date": lambda x: (current_date - x.max()).days,
             "order_id": "count",

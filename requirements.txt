@@ -10,3 +10,6 @@ seaborn>=0.13.0
 scipy>=1.11.0
 openpyxl>=3.1.0
 supabase
+shutil
+tempfile
+datetime 

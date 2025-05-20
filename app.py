@@ -1125,8 +1125,8 @@ def show_add_order():
     
     with st.form("add_order_form"):
         receiver_name = st.text_input("Receiver Name")
-        date = st.date_input("Order Date", value=datetime.date.today())
-        expected_delivery_date = st.date_input("Expected Delivery Date", value=datetime.date.today())
+        date = st.date_input("Order Date", value=datetime.today().date())
+        expected_delivery_date = st.date_input("Expected Delivery Date", value=datetime.today().date())
         product = st.text_input("Product")
         description = st.text_area("Description (Optional)")
         
@@ -1153,9 +1153,10 @@ def show_add_order():
         st.write(f"**Total Amount with GST: ₹{total_amount_with_gst:.2f}**")
         st.write(f"**Pending Amount: ₹{pending_amount:.2f}**")
         
-        submitted = st.form_submit_button("Add Order")
+        # Added submit button
+        submit_button = st.form_submit_button("Add Order")
         
-        if submitted:
+        if submit_button:
             if receiver_name and product:
                 if add_order(receiver_name, date, expected_delivery_date, product, description, 
                             quantity, price, gst, advance_payment):
@@ -1167,7 +1168,7 @@ def show_add_order():
     if st.session_state.form_submitted and st.session_state.clear_form:
         st.session_state.clear_form = False
         st.rerun()
-
+        
 def show_dashboard():
     
     st.title("Dashboard")
@@ -1731,7 +1732,7 @@ def show_manage_orders():
             (filtered_orders["date"] <= pd.Timestamp(end_date))
         ]
     
-    filtered_orders = filtered_orders.sort_values(by="order_id")
+    filtered_orders = filtered_orders.sort_values(by="order_id",ascending=False)
     
     st.subheader("Orders")
     if filtered_orders.empty:
@@ -1840,7 +1841,7 @@ def show_manage_orders():
                         max_value=order["quantity"] - order["delivered_quantity"],
                         value=1
                     )
-                    delivery_date = st.date_input("Delivery Date", value=datetime.date.today())
+                    delivery_date = st.date_input("Delivery Date", value=datetime.today())
                     total_amount_received = st.number_input(
                         "Total Amount Received (₹)",
                         min_value=0.0,

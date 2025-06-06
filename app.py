@@ -1,1694 +1,2254 @@
 import streamlit as st
-import base64
-from pathlib import Path
-import time
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import datetime
+from supabase import create_client, Client
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+from dotenv import load_dotenv
+import os
+from io import BytesIO
+import uuid
+import requests
+import logging
+from sklearn.linear_model import LinearRegression
+import seaborn as sns
+from scipy import stats
+import re
+import openpyxl
+from openpyxl.utils.dataframe import dataframe_to_rows
+import zipfile
 
-# Page configuration
-st.set_page_config(
-    page_title="Krish Chaudhary | Portfolio",
-    page_icon="👨‍💻",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file for local
+if os.path.exists(".env"):
+    from dotenv import load_dotenv
+    load_dotenv()
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+    api_key = os.getenv("CLOUDINARY_API_KEY")
+    api_secret = os.getenv("CLOUDINARY_API_SECRET")
+    admin_username = os.getenv("ADMIN_USERNAME")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+else:
+    cloud_name = st.secrets["CLOUDINARY_CLOUD_NAME"]
+    api_key = st.secrets["CLOUDINARY_API_KEY"]
+    api_secret = st.secrets["CLOUDINARY_API_SECRET"]
+    admin_username = st.secrets["ADMIN_USERNAME"]
+    admin_password = st.secrets["ADMIN_PASSWORD"]
+    supabase_url = st.secrets["SUPABASE_URL"]
+    supabase_key = st.secrets["SUPABASE_KEY"]
+
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=cloud_name,
+    api_key=api_key,
+    api_secret=api_secret
 )
 
-# Updated CSS function with proper Streamlit button styling
-def load_css():
-    st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-    *{
-        font-family: 'Inter', sans-serif;
-    }
-
-    /* Sidebar Styling */
-    .css-1v3fvcr {
-        background: linear-gradient(180deg, #1A1A2E 0%, #16213E 100%) !important;
-        border-right: 1px solid rgba(255,255,255,0.08);
-        width: 280px !important;
-        padding: 1.5rem !important;
-        box-shadow: 3px 0 15px rgba(0,0,0,0.3);
-        overflow-y: auto;
-    }
-    .st-emotion-cache-gsulwm svg {
-        display: none !important;
-    }
-    .st-emotion-cache-gsulwm button::before {
-        content: "";
-        display: inline-block;
-        width: 24px;
-        height: 24px;
-        background-image: url("data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZmlsbD0iY3VycmVudENvbG9yIiBkPSJNMyA2aDE4djJIM3ptMCA1aDE4djJIM3ptMCA1aDE4djJIM3oiLz48L3N2Zz4=");
-        background-size: cover;
-        position: relative;
-        top: 2px;
-    }
-    .st-emotion-cache-gsulwm button {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: Armando 8px !important;
-        width: 40px !important;
-        height: 40px !important;
-        background: transparent !important;
-        border: none !important;
-    }
-
-    .st-emotion-cache-gsulwm button:hover {
-        background: rgba(59, 130, 246, 0.1) !important;
-        transform: scale(1.1) !important;
-    }
-    .st-emotion-cache-vlxhtx {
-        width: 100%;
-        max-width: 100%;
-        position: relative;
-        display: flex;
-        flex: 1 1 0%;
-        flex-direction: column;
-        gap: 0.5rem;
-        
-    }
-    
-
-    /* Sidebar Navigation Buttons */
-    .stButton > button {
-        width: 100%;
-        height: 30px;
-        background: #ffffff !important;
-        border: 2px solid #3B82F6 !important;
-        color: #000000 !important;
-        border-radius: 10px !important;
-        font-weight: 500 !important;
-        font-size: 0.95rem !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.5px !important;
-        cursor: pointer !important;
-        transition: all 0.4s ease !important;
-        position: relative !important;
-        overflow: hidden !important;
-        margin-bottom: 0.05rem !important;
-        display: flex !important;
-        align-items: center !important;
-        gap: 0.5rem !important;
-        
-        
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
-        z-index: 1;
-    }
-
-    .stButton > button:hover {
-        background: #ffffff !important;
-        border: 2px solid #3B82F6 !important;
-        color: #000000 !important;
-        transform: scale(1.05) translateX(5px) !important;
-        box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3), 0 0 15px rgba(59, 130, 246, 0.2) !important;
-    }
-
-    .stButton > button:active {
-        background: #ffffff !important;
-        border: 2px solid #3B82F6 !important;
-        color: #000000 !important;
-        transform: scale(0.95) !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-    }
-
-    .stButton > button:focus {
-        outline: none !important;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3) !important;
-    }
-
-    /* Advanced Hover Border Animation */
-    .stButton > button::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(59, 130, 246, 0.2),
-            transparent
-        );
-        transition: left 0.5s ease;
-        z-index: -1;
-    }
-
-    .stButton > button:hover::before {
-        left: 100%;
-    }
-
-    /* Ripple Effect */
-    .stButton > button::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 0;
-        height: 0;
-        background: rgba(59, 130, 246, 0.15);
-        border-radius: 50%;
-        transform: translate(-50%, -50%);
-        transition: width 0.6s ease, height 0.6s ease;
-        z-index: -1;
-    }
-
-    .stButton > button:hover::after {
-        width: 300px;
-        height: 300px;
-    }
-
-    /* Responsive Adjustments */
-    @media (max-width: 768px) {
-        .css-1v3fvcr {
-            width: 220px !important;
-            padding: 1rem !important;
-        }
-
-        .stButton > button {
-            height: 45px !important;
-            font-size: 0.9rem !important;
-            padding-left: 1.2rem !important;
-        }
-    }
-   .st-emotion-cache-15ecox0 {
-    display: none !important;
-}
-
-    /* Section Header Styles */
-    .section-header {
-        position: relative;
-        font-size: 2.2rem;
-        font-weight: 600;
-        text-align: center;
-        margin: 2rem 0 1.5rem 0;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .section-header span {
-        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-        background-clip: text;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    .section-header:hover {
-       transform: scale(1.05); /* Slight scale for emphasis */
-       text-shadow: 0 0 8px rgba(59, 130, 246, 0.5); /* Subtle glow effect */
-    }
-
-    .section-header::after {
-        content: '';
-        position: absolute;
-        bottom: -5px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 80px;
-        height: 3px;
-        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-        border-radius: 2px;
-    }
-    .section-header:hover::after {
-        width: 100px; /* Slightly wider underline on hover */
-    }
-
-    /* Profile Section */
-    .profile-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin-bottom: 2rem;
-    }
-
-    .profile-card {
-        position: relative;
-        margin-bottom: 1rem;
-    }
-
-    .profile-img-new {
-        width: 400px;
-        height: 400px;
-        border-radius: 50%;
-        border: 3px solid transparent;
-        background: linear-gradient(45deg, #667eea, #764ba2);
-        padding: 3px;
-        box-shadow: 0 15px 30px rgba(0,0,0,0.2);
-        transition: transform 0.3s ease;
-        object-fit: cover;
-    }
-
-    
-    .profile-img-new:hover {
-        transform: scale(1.06) rotate(5deg); /* Added subtle rotation for dynamic effect */
-        box-shadow: 0 20px 40px rgba(0,0,0,0.3), 0 0 20px rgba(102,126,234,0.5); /* Enhanced shadow and glow */
-        filter: brightness(1.0); /* Slight brightness increase for vibrancy */
-    }
-
-
-    .status-indicator {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(76, 175, 80, 0.1);
-        padding: 6px 14px;
-        border-radius: 20px;
-        border: 1px solid rgba(76, 175, 80, 0.2);
-    }
-
-    .status-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #4CAF50;
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.5; }
-        100% { opacity: 1; }
-    }
-
-    .status-text {
-        font-size: 0.85rem;
-        color: #4CAF50;
-        font-weight: 500;
-    }
-
-    .hero-content {
-        padding: 1.5rem 0;
-    }
-
-    .greeting {
-        font-size: 1.8rem;
-        color: #667eea;
-        font-weight: 500;
-        margin-bottom: 0.5rem;
-    }
-
-    .hero-name {
-        font-size: 3.8rem;
-        font-weight: 700;
-        background: linear-gradient(45deg, #667eea, #764ba2);
-        background-clip: text;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.8rem;
-    }
-
-    .role-container {
-        margin-bottom: 1.5rem;
-    }
-
-    .role-prefix {
-        font-size: 1.1rem;
-        color: #5a6c7d;
-        font-weight: 500;
-    }
-
-    .rotating-roles {
-        position: relative;
-        height: 35px;
-        margin-top: 0.5rem;
-    }
-
-    .role-item {
-        position: absolute;
-        font-size: 1.6rem;
-        font-weight: 600;
-        background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
-        background-clip: text;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        opacity: 0;
-        animation: roleRotate 8s infinite;
-    }
-
-    .role-item:nth-child(1) { animation-delay: 0s; }
-    .role-item:nth-child(2) { animation-delay: 2s; }
-    .role-item:nth-child(3) { animation-delay: 4s; }
-    .role-item:nth-child(4) { animation-delay: 6s; }
-
-    @keyframes roleRotate {
-        0%, 22.5% { opacity: 1; transform: translateY(0); }
-        25%, 97.5% { opacity: 0; transform: translateY(-15px); }
-        100% { opacity: 0; transform: translateY(0); }
-    }
-
-    .hero-description {
-        font-size: 1.1rem;
-        line-height: 1.7;
-        color: #5a6c7d;
-        margin-bottom: 1.5rem;
-    }
-
-    .stats-section {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1rem;
-        margin: 2rem 0;
-        padding: 1.5rem;
-        background: rgba(102, 126, 234, 0.05);
-        border-radius: 12px;
-    }
-
-    .stat-card {
-        text-align: center;
-        padding: 1.2rem;
-        background: white;
-        border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        transition: transform 0.3s ease;
-    }
-
-    .stat-card:hover {
-        transform: translateY(-3px);
-    }
-
-    .stat-number {
-        font-size: 2.5rem;
-        font-weight: 700;
-        background: linear-gradient(45deg, #667eea, #764ba2);
-        background-clip: text;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    .stat-label {
-        font-size: 1.3rem;
-        color: #5a6c7d;
-        font-weight: 500;
-    }
-    @media (max-width: 768px) {
-        .stats-section {
-            grid-template-columns: repeat(2, 1fr); /* 2 columns for tablets */
-            gap: 0.8rem;
-            padding: 1rem;
-            margin: 1.5rem 0;
-        }
-
-        .stat-card {
-            padding: 0.8rem;
-        }
-
-        .stat-number {
-            font-size: 2rem; /* Reduced for smaller screens */
-        }
-
-        .stat-label {
-            font-size: 1rem; /* Reduced for better fit */
-        }
-    }
-
-    @media (max-width: 480px) {
-        .stats-section {
-            grid-template-columns: 1fr; /* Single column for small mobile screens */
-            gap: 0.6rem;
-            padding: 0.8rem;
-        }
-
-        .stat-card {
-            padding: 0.6rem;
-        }
-
-        .stat-number {
-            font-size: 1.8rem; /* Further reduced for very small screens */
-        }
-
-        .stat-label {
-            font-size: 0.9rem; /* Further reduced for readability */
-        }
-    }
-
-    .social-section {
-        margin: 2rem 0;
-    }
-
-    .social-title {
-        text-align: center;
-        font-size: 2.5rem;
-        font-weight: 600;
-        margin-bottom: 1.5rem;
-        background: linear-gradient(45deg, #667eea, #764ba2);
-        background-clip: text;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    .social-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1rem;
-        max-width: 600px;
-        margin: 0 auto;
-    }
-
-    .social-card {
-        display: flex;
-        align-items: center;
-        padding: 1rem;
-        background: white;
-        border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        text-decoration: none;
-        color: inherit;
-        transition: transform 0.3s ease;
-        border-left: 3px solid transparent;
-        text-decoration: none !important;
-    }
-
-    .social-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 6px 16px rgba(0,0,0,0.15);
-        text-decoration: none !important;
-    }
-
-    .social-card.linkedin { border-left-color: #0077B5 }
-    .social-card.github { border-left-color: #333; }
-    .social-card.whatsapp { border-left-color: #25D366; }
-    .social-card.email { border-left-color: #EA4335; }
-
-    .social-icon {
-        font-size: 2.2rem; /* Increased from 1.8rem for larger icon */
-        margin-right: 0.8rem;
-        width: 48px; /* Increased from 40px to accommodate larger icon */
-        height: 48px; /* Increased from 40px to maintain square shape */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 8px;
-        background: rgba(102, 126, 234, 0.1);
-    }
-
-    .social-name {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: #2c3e50;
-    }
-
-    .social-desc {
-        font-size: 1.0rem;
-        color: #7f8c8d;
-    }
-
-    .card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        margin: 1.5rem auto;
-        max-width: 1000px; /* Adjust as needed */
-        width: 100%; /* Ensure it takes available width up to max-width */
-        display: block; /* Ensure block-level for margin: auto */
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-
-    /* Ensure centering in parent container */
-    div[data-testid="stVerticalBlock"] .card,
-    div[data-testid="stHorizontalBlock"] .card,
-    div.card {
-        margin-left: auto !important; /* Force centering */
-        margin-right: auto !important;
-    }
-
-    /* Tablets */
-    @media (max-width: 768px) {
-        .card {
-            padding: 1rem;
-            max-width: 90%;
-            margin: 1rem auto !important; /* Force centering */
-            width: 100%;
-        }
-    }
-
-    /* Small Mobiles */
-    @media (max-width: 480px) {
-        .card {
-            padding: 0.8rem;
-            max-width: 95%;
-            margin: 0.8rem auto !important; /* Force centering */
-            width: 100%;
-        }
-    }
-
-    .card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 6px 16px rgba(0,0,0,0.2); /* Enhanced hover shadow */
-        transform: scale(1.02) translateY(-3px); /* Added slight scale for interactivity */
-    }
-
-    .card-title {
-        font-size: 1.0rem;
-        font-weight: 600;
-        color: #2c3e50;
-        margin-bottom: 0.8rem;
-        -webkit-text-fill-color: #2c3e50;
-    }
-
-    .card-subtitle {
-        font-size: 0.8rem;
-        font-weight: 500;
-        color: #3498db;
-        margin-bottom: 0.5rem;
-        -webkit-text-fill-color: #3498db;
-    }
-
-    .card-text {
-        font-size: 0.95rem;
-        line-height: 1.6;
-        color: #5a6c7d;
-                
-    }
-
-    .skill-tag {
-        display: inline-block;
-        background: linear-gradient(45deg, #667eea, #764ba2);
-        color: white;
-        padding: 6px 12px;
-        border-radius: 20px;
-        margin: 4px;
-        font-weight: 500;
-        font-size: 0.85rem;
-        transition: transform 0.3s ease;
-    }
-
-    .skill-tag:hover {
-        transform: scale(1.03);
-    }
-
-    .contact-form {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-    }
-
-    a.download-btn {
-        background: linear-gradient(45deg, #2ecc71, #27ae60); /* Vibrant green gradient */
-        color: #1a1a1a !important; /* Dark gray text with !important to override */
-        padding: 10px 20px;
-        border: none;
-        border-radius: 20px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
-        text-decoration: none;
-        display: inline-block;
-    }
-
-    a.download-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-        background: linear-gradient(45deg, #27ae60, #2ecc71); /* Subtle gradient shift */
-        color: #1a1a1a !important; /* Ensure dark gray on hover */
-    }
-
-    .timeline-item {
-        border-left: 2px solid #667eea;
-        padding-left: 1.5rem;
-        margin-bottom: 1.5rem;
-        position: relative;
-    }
-
-    .timeline-item::before {
-        content: '';
-        position: absolute;
-        left: -6px;
-        top: 0;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-       
-        background: #667eea;
-    }
-    .interest-list {
-        list-style-type: none;
-        padding: 0;
-        margin: 0;
-    }
-
-    .interest-list li {
-        font-size: 1rem;
-        color: #2c3e50;
-        margin-bottom: 0.5rem;
-    }
-
-    /* Responsive Adjustments */
-    @media (max-width: 768px) {
-        .css-1v3fvcr {
-            width: 200px !important;
-            padding: 0.75rem !important;
-        }
-
-        .stButton > button {
-            height: 40px !important;
-            font-size: 0.85rem !important;
-        }
-
-        .section-header {
-            font-size: 1.8rem;
-        }
-
-        .hero-name {
-            font-size: 2.5rem;
-        }
-
-        .stats-section {
-            grid-template-columns: repeat(2, 1fr);
-        }
-
-        .social-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .profile-img-new {
-            width: 400px;
-            height: 400px;
-        }
-        .interest-list {
-        padding: 0;
-    
-
-        .interest-list li {
-            font-size: 0.9rem;
-            margin-bottom: 0.4rem;
-        }
-
-        .interest-item .skill-tag {
-            font-size: 0.85rem;
-            padding: 4px 8px;
-        }
-
-        .interest-item .card-text {
-            font-size: 0.8rem;
-            line-height: 1.4;
-        }
-    }
-    @media (max-width: 768px) {
-        .css-1v3fvcr {
-            width: 200px !important;
-            padding: 0.75rem !important;
-        }
-
-        .stButton > button {
-            height: 40px !important;
-            font-size: 0.85rem !important;
-        }
-
-        .section-header {
-            font-size: 1.8rem;
-        }
-
-        .hero-name {
-            font-size: 2.5rem;
-        }
-
-        .stats-section {
-            grid-template-columns: repeat(2, 1fr);
-        }
-
-        .social-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .profile-img-new {
-            width: 400px;
-            height: 400px;
-        }
-    }
-
-    /* New Mobile Responsive Adjustments */
-    @media (max-width: 480px) {
-        /* Adjust Sidebar for Small Screens */
-        .css-1v3fvcr {
-            width: 100% !important; /* Full width for mobile */
-            padding: 0.5rem !important;
-            position: relative !important; /* Ensure it fits within mobile layout */
-        }
-
-        /* Adjust Sidebar Buttons for Mobile */
-        .stButton > button {
-            height: 38px !important;
-            font-size: 0.8rem !important;
-            padding-left: 1rem !important;
-            margin-bottom: 0.5rem !important;
-        }
-
-        /* Section Header for Mobile */
-        .section-header {
-            font-size: 1.5rem;
-            margin: 1.5rem 0 1rem 0;
-        }
-
-        .section-header::after {
-            width: 60px; /* Smaller underline for mobile */
-        }
-
-        .section-header:hover::after {
-            width: 80px;
-        }
-
-        /* Profile Image for Mobile */
-        .profile-img-new {
-            width: 200px; /* Smaller size for mobile */
-            height: 200px;
-        }
-
-        /* Hero Section for Mobile */
-        .greeting {
-            font-size: 1.4rem;
-        }
-
-        .hero-name {
-            font-size: 2rem;
-        }
-
-        .role-container {
-            margin-bottom: 1rem;
-        }
-
-        .role-prefix {
-            font-size: 0.9rem;
-        }
-
-        .rotating-roles {
-            height: 25px;
-        }
-
-        .role-item {
-            font-size: 1.2rem;
-        }
-
-        .hero-description {
-            font-size: 0.95rem;
-            line-height: 1.5;
-        }
-
-        /* Social Section for Mobile */
-        .social-title {
-            font-size: 1.8rem;
-            margin-bottom: 1rem;
-        }
-
-        .social-grid {
-            grid-template-columns: 1fr;
-            gap: 0.8rem;
-            max-width: 100%;
-            padding: 0 0.5rem;
-        }
-
-        .social-card {
-            padding: 0.8rem;
-        }
-
-        .social-icon {
-            font-size: 1.8rem;
-            width: 40px;
-            height: 40px;
-        }
-
-        .social-name {
-            font-size: 1.2rem;
-        }
-
-        .social-desc {
-            font-size: 0.85rem;
-        }
-
-        /* Contact Form for Mobile */
-        .contact-form {
-            padding: 1rem;
-        }
-
-        /* Download Button for Mobile */
-        a.download-btn {
-            padding: 8px 16px;
-            font-size: 0.9rem;
-        }
-
-        /* Timeline for Mobile */
-        .timeline-item {
-            padding-left: 1rem;
-            margin-bottom: 1rem;
-        }
-
-        .timeline-item::before {
-            left: -5px;
-            width: 8px;
-            height: 8px;
-        }
-
-        /* Skill Tags for Mobile */
-        .skill-tag {
-            padding: 5px 10px;
-            font-size: 0.75rem;
-            margin: 3px;
-        }
-        
-    }
-
-    /* Additional Breakpoint for Larger Mobile Devices (360px - 480px) */
-    @media (max-width: 360px) {
-        .profile-img-new {
-            width: 150px;
-            height: 150px;
-        }
-
-        .greeting {
-            font-size: 1.2rem;
-        }
-
-        .hero-name {
-            font-size: 1.8rem;
-        }
-
-        .section-header {
-            font-size: 1.3rem;
-        }
-
-        .social-title {
-            font-size: 1.5rem;
-        }
-
-        .social-icon {
-            font-size: 1.5rem;
-            width: 36px;
-            height: 36px;
-        }
-
-        .social-name {
-            font-size: 1.1rem;
-        }
-
-        .social-desc {
-            font-size: 0.8rem;
-        }
-        .interest-list li {
-        font-size: 0.85rem;
-        margin-bottom: 0.3rem;
-    
-        .interest-item .skill-tag {
-            font-size: 0.8rem;
-            padding: 3px 6px;
-        }
-
-        .interest-item .card-text {
-            font-size: 0.75rem;
-            line-height: 1.3;
-        }
-    }
-    @media (max-width: 768px) {
-       div[data-testid="stToolbar"] button: {
-           display: none !important;
-       }
-    }
-    
-    </style>
-                
-    """, unsafe_allow_html=True)
-
-def get_base64_of_bin_file(bin_file):
-    """Convert binary file to base64"""
+# Initialize Supabase client
+supabase: Client = create_client(supabase_url, supabase_key)
+
+# Set page configuration
+st.set_page_config(page_title="OrderEasy Analytics", layout="wide", page_icon="logo.png")
+
+# Database setup
+def init_db():
+    # Existing table checks (users, orders, ewaybills) remain unchanged
     try:
-        with open(bin_file, 'rb') as f:
-            data = f.read()
-        return base64.b64encode(data).decode()
-    except:
-        return None
-
-def create_download_link(file_path, link_text):
-    """Create a download link for files"""
-    try:
-        with open(file_path, "rb") as file:
-            btn = st.download_button(
-                label=link_text,
-                data=file,
-                file_name=file_path,
-                mime="application/octet-stream",
-                key=f"download_{file_path}"
-            )
-        return btn
-    except:
-        return st.error(f"File {file_path} not found")
+        supabase.table("users").select("*").limit(1).execute()
+        logger.info("Users table exists")
 
 
     
-def home_section():
-    """Home section with profile and introduction"""
+        supabase.table("orders").select("*").limit(1).execute()
+        logger.info("Orders table exists")
     
-    # Load and encode profile picture (JPG format)
-    profile_pic_path = "images/profile.jpg"
-    profile_pic_base64 = get_base64_of_bin_file(profile_pic_path)
-    if profile_pic_base64 is None:
-        st.error(f"Profile picture '{profile_pic_path}' not found. Please ensure the file exists in the images directory.")
-        profile_pic_base64 = ""  # Fallback to empty string to avoid breaking the layout
 
-    with open("resume/resume.pdf", "rb") as f:
-        pdf_data = f.read()
-    # Hero Section with Split Layout
-    col1, col2 = st.columns([1, 2])
     
-    with open("resume/resume.pdf", "rb") as f:
-        pdf_data = f.read()
+        supabase.table("deliveries").select("*").limit(1).execute()
+        logger.info("Deliveries table exists")
+    
 
-    with col1:
-        st.markdown(f"""
-        <div class="profile-container">
-            <div class="profile-card">
-                <img src="data:image/jpeg;base64,{profile_pic_base64}" class="profile-img-new" alt="Profile Picture">
-                <div class="profile-glow"></div>
+    # Check and add total_amount_received column to deliveries if not exists
+    
+        response = supabase.table("deliveries").select("total_amount_received").limit(1).execute()
+        logger.info("total_amount_received column exists in deliveries table")
+    
+     
+    
+        supabase.table("ewaybills").select("*").limit(1).execute()
+        logger.info("Ewaybills table exists")
+    
+    
+        response = supabase.table("users").select("is_admin").limit(1).execute()
+        logger.info("is_admin column exists in users table")
+    
+    # Check and add delivered_quantity column to orders if not exists
+    
+        response = supabase.table("orders").select("delivered_quantity").limit(1).execute()
+        logger.info("delivered_quantity column exists in orders table")
+    
+    # Check and add resource_type column to ewaybills if not exists
+    
+        response = supabase.table("ewaybills").select("resource_type").limit(1).execute()
+        logger.info("resource_type column exists in ewaybills table")
+    
+    # Check and add resource_type column to deliveries if not exists
+    
+        response = supabase.table("deliveries").select("resource_type").limit(1).execute()
+        logger.info("resource_type column exists in deliveries table")
+
+    except Exception as e:
+        st.error("An unexpected error occurred. Please try again or contact support.")
+        logger.error(f"Somthing went wrong!")
+        
+init_db()
+
+# Initialize session state
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
+if "current_org" not in st.session_state:
+    st.session_state.current_org = None
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+if "form_submitted" not in st.session_state:
+    st.session_state.form_submitted = False
+if "form_message" not in st.session_state:
+    st.session_state.form_message = ""
+if "form_status" not in st.session_state:
+    st.session_state.form_status = ""
+if "editing_order" not in st.session_state:
+    st.session_state.editing_order = None
+if "clear_form" not in st.session_state:
+    st.session_state.clear_form = False
+if "show_delete_account" not in st.session_state:
+    st.session_state.show_delete_account = False
+
+def display_header():
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&display=swap');
+        
+        .header-container {
+            background: linear-gradient(135deg, #444a54 0%, #212832 100%);
+            padding: 20px 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            text-align: left;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .logo-container {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .logo-text-primary {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 255, 255, 0.2);
+            margin: 0;
+            letter-spacing: 1px;
+        }
+        
+        .logo-text-secondary {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 255, 255, 0.2);
+            margin-left: 10px;
+            letter-spacing: 1px;
+        }
+        
+        .logo-text-full {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 20px;
+            font-weight: 500;
+            color: #ffffff;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+            margin-top: 5px;
+            letter-spacing: 1px;
+            display: block;
+            text-align: right;
+            padding-right: 10px;
+        }
+        
+        /* 3D effect for text */
+        .metallic-text {
+            color: #f5f5f5;
+            background: linear-gradient(180deg, #ffffff 0%, #c0c0c0 50%, #ffffff 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(2px 2px 2px rgba(0, 0, 0, 0.5));
+        }
+        
+        /* Media queries for responsiveness */
+        @media (min-width: 768px) {
+            .header-container {
+                padding: 24px 20px;
+                margin-bottom: 25px;
+            }
+            
+            .logo-text-primary {
+                font-size: 38px;
+            }
+            
+            .logo-text-secondary {
+                font-size: 30px;
+            }
+            
+            .logo-text-full {
+                font-size: 24px;
+                padding-right: 20px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .logo-container {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .logo-text-primary {
+                font-size: 28px;
+            }
+            
+            .logo-text-secondary {
+                font-size: 20px;
+                margin-left: 0;
+                margin-top: 5px;
+            }
+            
+            .logo-text-full {
+                font-size: 18px;
+                text-align: right;
+                padding-right: 10px;
+                margin-top: 8px;
+                width: 100%;
+            }
+        }
+        
+        @media (max-width: 400px) {
+            .header-container {
+                padding: 15px 12px;
+            }
+            
+            .logo-text-primary {
+                font-size: 24px;
+            }
+            
+            .logo-text-secondary {
+                font-size: 18px;
+            }
+            
+            .logo-text-full {
+                font-size: 16px;
+                text-align: right;
+                width: 100%;
+            }
+        }
+        </style>
+        
+        <div class="header-container">
+            <div class="logo-container">
+                <span class="logo-text-primary metallic-text">OEA</span>
+                <span class="logo-text-secondary metallic-text">OrderEasy Analytics</span>
             </div>
-            <div class="status-indicator">
-                <div class="status-dot"></div>
-                <span class="status-text">Available for opportunities</span>
-            </div>
-            <div style="margin-top: 1rem; display: flex; justify-content: center;">
-                <a id="resume-card" href="data:application/pdf;base64,{base64.b64encode(pdf_data).decode()}" download="Krish_Chaudhary_Resume.pdf" class="download-btn">
-                    📄 Download Resume
-                </a>
-            </div>
+            <span class="logo-text-full metallic-text">OrderEasy</span>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True
+    )
+
+# Helper functions for database operations
+def load_users():
+  try:
+    response = supabase.table("users").select("*").execute()
+    users = {row["username"]: {
+        "password": row["password"],
+        "organization": row["organization"],
+        "is_admin": row["is_admin"]
+    } for row in response.data}
+    return users
+  except Exception :
+      st.error("somthing went wrong !")
+
+def save_user(username, password, organization, is_admin=0):
+    try:
+        supabase.table("users").insert({
+            "username": username,
+            "password": password,
+            "organization": organization,
+            "is_admin": is_admin
+        }).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Error saving user {username}")
+        st.error(f"Error saving user {username}: {e}")
+        return False
+
+def load_orders():
+  try:
+    response = supabase.table("orders").select("*").execute()
+    df = pd.DataFrame(response.data)
+    return df if not df.empty else pd.DataFrame(columns=[
+        "order_id", "org", "receiver_name", "date", "expected_delivery_date",
+        "product", "description", "quantity", "price", "basic_price", "gst",
+        "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
+    ])
+  except Exception :
+      st.error("somthing went wrong !")
+
+def save_orders(df):
+  try:
+    # Convert DataFrame to list of dictionaries
+    data = df.to_dict(orient="records")
+    # Delete existing records and insert new ones
+    supabase.table("orders").delete().neq("order_id", -1).execute()  # Clear table
+    if data:
+        supabase.table("orders").insert(data).execute()
+  except Exception :
+      st.error("somthing went wrong !")
+
+def load_ewaybills():
+  try:
+    response = supabase.table("ewaybills").select("*").execute()
+    ewaybills = {f"{row['order_id']}_{row['org']}": {
+        "public_id": row["public_id"],
+        "url": row["url"],
+        "file_name": row["file_name"],
+        "upload_date": row["upload_date"],
+        "resource_type": row["resource_type"] if row["resource_type"] else ("raw" if row["file_name"].lower().endswith(".pdf") else "image")
+    } for row in response.data}
+    return ewaybills
+  except Exception :
+      st.error("somthing went wrong !")
+
+def save_ewaybill(order_id, org, public_id, url, file_name, upload_date, resource_type):
+  try:
+    supabase.table("ewaybills").upsert({
+        "order_id": order_id,
+        "org": org,
+        "public_id": public_id,
+        "url": url,
+        "file_name": file_name,
+        "upload_date": upload_date,
+        "resource_type": resource_type
+    }).execute()
+  except Exception :
+      st.error("somthing went wrong !")
+
+# Authentication functions
+def login(username, password):
+  try:
+    users = load_users()
+    if username in users and users[username]["password"] == password:
+        st.session_state.authenticated = True
+        st.session_state.current_user = username
+        st.session_state.current_org = users[username]["organization"]
+        st.session_state.is_admin = (username == admin_username and password == admin_password)
+        return True
+    return False
+  except Exception :
+      st.error("somthing went wrong !")
+
+def signup(username, password, organization):
+  try:
+    users = load_users()
+    if username in users:
+        st.error("Username already exists. Please choose a different username.")
+        return False
+    
+    # Password validation: at least 6 characters, one letter, one digit, one special character
+    password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@₹!%*?&])[A-Za-z\d@₹!%*?&]{6,}$"
+    if not re.match(password_pattern, password):
+        st.error("Password must be at least 6 characters long, contain at least one letter, one digit, and one special character (@₹!%*?&).")
+        return False
+    
+    # Ensure organization is provided
+    if not organization:
+        st.error("Organization name is required.")
+        return False
+    
+    success = save_user(username, password, organization)
+    if success:
+        logger.info(f"New user {username} signed up successfully for organization {organization}")
+        return True
+    else:
+        st.error("Failed to create account. Please try again.")
+        return False
+  except Exception :
+      st.error("somthing went wrong !")
+
+def load_deliveries(order_id=None, org=None):
+  try:
+    query = supabase.table("deliveries").select("*")
+    if order_id is not None and org is not None:
+        query = query.eq("order_id", order_id).eq("org", org)
+    response = query.execute()
+    df = pd.DataFrame(response.data)
+    return df if not df.empty else pd.DataFrame(columns=[
+        "org", "delivery_id", "order_id", "delivery_quantity", "delivery_date",
+        "total_amount_received", "public_id", "url", "file_name", "upload_date", "resource_type"
+    ])
+  except Exception :
+      st.error("somthing went wrong !")
+
+
+def delete_delivery(order_id, delivery_id):
+    try:
+        # Get delivery details
+        delivery_response = supabase.table("deliveries").select("*").eq("order_id", order_id).eq("delivery_id", delivery_id).eq("org", st.session_state.current_org).execute()
+        if not delivery_response.data:
+            logger.error(f"Delivery {delivery_id} for order {order_id} not found")
+            return False, "Delivery not found"
+
+        delivery = delivery_response.data[0]
+        delivery_quantity = delivery["delivery_quantity"]
+        amount_received = delivery["total_amount_received"]
+        public_id = delivery["public_id"]
+        resource_type = delivery["resource_type"]
+
+        # Validate delivery_quantity
+        if delivery_quantity <= 0:
+            logger.error(f"Invalid delivery quantity {delivery_quantity} for delivery {delivery_id}")
+            return False, "Invalid delivery quantity"
+
+        # Get order details before deleting delivery
+        order_response = supabase.table("orders").select(
+            "delivered_quantity, quantity, status, pending_amount, total_amount_with_gst, advance_payment"
+        ).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        if not order_response.data:
+            logger.error(f"Order {order_id} not found for org {st.session_state.current_org}")
+            return False, "Order not found"
+
+        order = order_response.data[0]
+
+        # Validate delivered_quantity
+        if order["delivered_quantity"] < delivery_quantity:
+            logger.error(
+                f"Cannot delete delivery {delivery_id}: delivered_quantity {order['delivered_quantity']} "
+                f"is less than delivery_quantity {delivery_quantity}"
+            )
+            return False, "Cannot delete delivery: Insufficient delivered quantity"
+
+        # Delete Cloudinary file if exists
+        if public_id:
+            try:
+                result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
+                if result.get("result") == "ok":
+                    logger.info(f"Deleted Cloudinary file: {public_id} (resource_type: {resource_type})")
+                else:
+                    logger.warning(f"Cloudinary file deletion issue: {public_id}, result: {result}")
+            except Exception as e:
+                logger.error(f"Error deleting Cloudinary file {public_id}")
+                st.error(f"Error deleting Cloudinary file {public_id}")
+
+        # Delete delivery from database
+        supabase.table("deliveries").delete().eq("order_id", order_id).eq("delivery_id", delivery_id).eq("org", st.session_state.current_org).execute()
+
+        # Calculate new delivered_quantity
+        new_delivered_quantity = order["delivered_quantity"] - delivery_quantity
+
+        # Recalculate pending_amount
+        # Sum total_amount_received from remaining deliveries (excluding the deleted one)
+        remaining_deliveries = supabase.table("deliveries").select("total_amount_received").eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        remaining_total_received = sum(d["total_amount_received"] for d in remaining_deliveries.data) if remaining_deliveries.data else 0
+        new_pending_amount = order["total_amount_with_gst"] - order["advance_payment"] - remaining_total_received
+        new_pending_amount = max(0, new_pending_amount)  # Prevent negative pending amount
+
+        # Update status if necessary
+        new_status = order["status"]
+        if new_delivered_quantity < order["quantity"] and order["status"] == "Completed":
+            new_status = "Pending"
+
+        # Update order
+        updates = {
+            "delivered_quantity": new_delivered_quantity,
+            "pending_amount": new_pending_amount,
+            "status": new_status
+        }
+        supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+
+        logger.info(
+            f"Deleted delivery #{delivery_id} for order {order_id}. "
+            f"Updated order: delivered_quantity={new_delivered_quantity}, "
+            f"pending_amount={new_pending_amount:.2f}, status={new_status}"
+        )
+        return True, "Delivery deleted successfully"
+    except Exception as e:
+        logger.error(f"Error deleting delivery {delivery_id} for order {order_id}")
+        st.error(f"Error deleting delivery {delivery_id} for order {order_id}")
+        return False, f"Error deleting delivery"
+def delete_account(username, by_admin=False):
+  try:
+    users = load_users()
+    if username not in users:
+        logger.error(f"User {username} not found for deletion")
+        return False
+
+    if by_admin and username == st.session_state.current_user:
+        st.error("Admin cannot delete their own account via Admin Panel. Use Account Settings to delete your account.")
+        return False
+
+    org = users[username]["organization"]
+
+    # Get order IDs for the organization
+    response = supabase.table("orders").select("order_id").eq("org", org).execute()
+    order_ids = [row["order_id"] for row in response.data]
+    logger.info(f"Found {len(order_ids)} orders for organization {org}")
+
+    # Delete Cloudinary files from deliveries
+    deleted_files = 0
+    for order_id in order_ids:
+        deliveries = load_deliveries(order_id, org)
+        for _, delivery in deliveries.iterrows():
+            if delivery["public_id"]:
+                try:
+                    result = cloudinary.uploader.destroy(delivery["public_id"], resource_type=delivery["resource_type"])
+                    if result.get("result") == "ok":
+                        logger.info(f"Deleted Cloudinary file: {delivery['public_id']} (resource_type: {delivery['resource_type']})")
+                        deleted_files += 1
+                    else:
+                        logger.warning(f"Cloudinary file deletion issue: {delivery['public_id']}, result: {result}")
+                except Exception as e:
+                    logger.error(f"Error deleting Cloudinary file {delivery['public_id']}")
+                    st.error(f"Error deleting Cloudinary file {delivery['public_id']}")
+
+    # Delete from database
+    try:
+        supabase.table("deliveries").delete().eq("org", org).execute()
+        logger.info(f"Deleted deliveries for org {org}")
+        supabase.table("ewaybills").delete().eq("org", org).execute()
+        logger.info(f"Deleted e-way bills for org {org}")
+        supabase.table("orders").delete().eq("org", org).execute()
+        logger.info(f"Deleted orders for org {org}")
+        supabase.table("users").delete().eq("username", username).execute()
+        logger.info(f"Deleted user {username}")
+    except Exception as e:
+        logger.error(f"Database deletion error")
+        st.error(f"Database deletion error")
+        return False
+
+    # Verify Cloudinary cleanup
+    try:
+        for resource_type in ["raw", "image"]:
+            resources = cloudinary.api.resources(prefix=f"delivery_{org}_", resource_type=resource_type)
+            remaining_files = resources.get("resources", [])
+            if remaining_files:
+                logger.warning(f"Found {len(remaining_files)} remaining Cloudinary {resource_type} files for org {org}: {[r['public_id'] for r in remaining_files]}")
+            else:
+                logger.info(f"No remaining Cloudinary {resource_type} files for org {org}")
+    except Exception as e:
+        logger.error(f"Error verifying Cloudinary cleanup for org {org}")
+        st.error("An unexpected error occurred. Please try again or contact support.")
+
+    if not by_admin:
+        st.session_state.authenticated = False
+        st.session_state.current_user = None
+        st.session_state.current_org = None
+        st.session_state.is_admin = False
+
+    logger.info(f"Account deletion completed for {username}. Deleted {deleted_files} Cloudinary files")
+    return True
+  except Exception :
+      st.error("somthing went wrong !")
+
+def logout():
+    st.session_state.authenticated = False
+    st.session_state.current_user = None
+    st.session_state.current_org = None
+    st.session_state.is_admin = False
+    st.session_state.form_submitted = False
+    st.session_state.form_message = ""
+    st.session_state.form_status = ""
+    st.session_state.editing_order = None
+    st.session_state.show_delete_account = False
+def add_order(receiver_name, date, expected_delivery_date, product, description, quantity, price, gst, advance_payment):
+  try:    
+    orders = load_orders()
+    
+    basic_price = quantity * price
+    gst_amount = basic_price * (gst / 100)
+    total_amount_with_gst = basic_price + gst_amount
+    pending_amount = total_amount_with_gst - advance_payment
+    
+    org_orders = get_org_orders()
+    order_id = 1 if org_orders.empty else org_orders["order_id"].max() + 1
+    
+    new_order = {
+        "order_id": int(order_id),  # Convert to Python int
+        "org": st.session_state.current_org,
+        "receiver_name": receiver_name,
+        "date": str(date),
+        "expected_delivery_date": str(expected_delivery_date),
+        "product": product,
+        "description": description,
+        "quantity": int(quantity),  # Convert to Python int
+        "price": float(price),  # Convert to Python float
+        "basic_price": float(basic_price),  # Convert to Python float
+        "gst": float(gst),  # Convert to Python float
+        "advance_payment": float(advance_payment),  # Convert to Python float
+        "total_amount_with_gst": float(total_amount_with_gst),  # Convert to Python float
+        "pending_amount": float(pending_amount),  # Convert to Python float
+        "status": "Pending",
+        "created_by": st.session_state.current_user
+    }
+    
+    supabase.table("orders").insert(new_order).execute()
+    
+    st.session_state.form_submitted = True
+    st.session_state.form_message = "Order added successfully!"
+    st.session_state.form_status = "success"
+    st.session_state.clear_form = True
+    logger.info(f"Added order {order_id} for org {st.session_state.current_org}")
+    return True
+  except Exception :
+      st.error("somthing went wrong !")
+# Order management functions
+def add_delivery(order_id, delivery_quantity, delivery_date, total_amount_received, file_data=None, file_name=None):
+    try:
+        # Fetch order details including advance_payment and pending_amount
+        order_response = supabase.table("orders").select(
+            "quantity, delivered_quantity, status, pending_amount, total_amount_with_gst, advance_payment"
+        ).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        if not order_response.data:
+            logger.error(f"Order {order_id} not found")
+            return False, "Order not found"
+
+        order = order_response.data[0]
+        total_quantity = order["quantity"]
+        current_delivered = order["delivered_quantity"]
+        advance_payment = order["advance_payment"]
+        order_total_amount = order["total_amount_with_gst"]
+
+        new_delivered = current_delivered + delivery_quantity
+
+        if new_delivered > total_quantity:
+            logger.error(f"Delivery quantity exceeds order quantity: {new_delivered} > {total_quantity}")
+            return False, f"Delivery quantity ({delivery_quantity}) would exceed order quantity ({total_quantity - current_delivered})."
+
+        # Validate total_amount_received
+        if total_amount_received < 0:
+            logger.error(f"Total amount received cannot be negative: {total_amount_received}")
+            return False, f"Total amount received cannot be negative."
+
+        # Calculate current total received from previous deliveries
+        deliveries = load_deliveries(order_id, st.session_state.current_org)
+        previous_total_received = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+
+        # Calculate effective pending amount before this delivery
+        effective_pending = order_total_amount - advance_payment - previous_total_received
+        if effective_pending < 0:
+            effective_pending = 0  # Prevent negative pending amount due to overpayment
+
+        # Update pending amount
+        new_pending = effective_pending - total_amount_received
+
+        # Calculate next delivery_id for this order and org
+        max_delivery_id_response = supabase.table("deliveries").select("delivery_id").eq("order_id", order_id).eq("org", st.session_state.current_org).order("delivery_id", desc=True).limit(1).execute()
+        next_delivery_id = 1 if not max_delivery_id_response.data else max_delivery_id_response.data[0]["delivery_id"] + 1
+
+        public_id = None
+        url = None
+        resource_type = None
+        upload_date = None
+
+        if file_data and file_name:
+            file_ext = file_name.split(".")[-1].lower()
+            resource_type = "raw" if file_ext == "pdf" else "image"
+            public_id = f"delivery_{st.session_state.current_org}_{order_id}_{uuid.uuid4()}"
+            
+            upload_result = cloudinary.uploader.upload(
+                file_data,
+                public_id=public_id,
+                resource_type=resource_type,
+                access_mode="public",
+                type="upload"
+            )
+            
+            resource_info = cloudinary.api.resource(public_id, resource_type=resource_type)
+            if resource_info.get("access_mode") != "public":
+                cloudinary.uploader.explicit(
+                    public_id,
+                    type="upload",
+                    resource_type=resource_type,
+                    access_mode="public"
+                )
+            
+            url = upload_result["secure_url"]
+            upload_date = datetime.now().isoformat()
+
+        # Insert delivery with payment details
+        delivery_data = {
+            "org": st.session_state.current_org,
+            "delivery_id": next_delivery_id,
+            "order_id": order_id,
+            "delivery_quantity": int(delivery_quantity),
+            "delivery_date": str(delivery_date),
+            "total_amount_received": float(total_amount_received),
+            "public_id": public_id,
+            "url": url,
+            "file_name": file_name,
+            "upload_date": upload_date,
+            "resource_type": resource_type
+        }
+        supabase.table("deliveries").insert(delivery_data).execute()
+
+        # Update order's delivered_quantity and pending_amount
+        updates = {
+            "delivered_quantity": new_delivered,
+            "pending_amount": new_pending
+        }
+        if new_delivered >= total_quantity and order["status"] != "Completed":
+            updates["status"] = "Completed"
+            updates["pending_amount"] = 0.0
+            # Verify total amount received (including advance) matches order total
+            total_received = previous_total_received + total_amount_received + advance_payment
+            
+        supabase.table("orders").update(updates).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+
+        logger.info(f"Added delivery #{next_delivery_id} of {delivery_quantity} units for order {order_id}, amount received: ₹{total_amount_received:.2f}, new pending: ₹{new_pending:.2f}")
+        return True, "Delivery added successfully"
+    except Exception as e:
+        logger.error(f"Error adding delivery for order {order_id}")
+        st.error("An unexpected error occurred. Please try again or contact support.")
+        return False, f"Error adding delivery:"
+def export_to_excel(df):
+  try:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
+  except Exception :
+      st.error("somthing went wrong !")
+
+def update_order_status(order_id, new_status):
+  try:
+    supabase.table("orders").update({"status": new_status}).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+    logger.info(f"Updated status of order {order_id} to {new_status}")
+  except Exception :
+      st.error("somthing went wrong !")
+
+def upload_ewaybill(order_id, file_data, file_name):
+    try:
+        file_ext = file_name.split(".")[-1].lower()
+        resource_type = "raw" if file_ext == "pdf" else "image"
+        public_id = f"ewaybill_{st.session_state.current_org}_{order_id}_{uuid.uuid4()}"
+        
+        upload_result = cloudinary.uploader.upload(
+            file_data,
+            public_id=public_id,
+            resource_type=resource_type,
+            access_mode="public",
+            type="upload"
+        )
+        
+        resource_info = cloudinary.api.resource(public_id, resource_type=resource_type)
+        if resource_info.get("access_mode") != "public":
+            cloudinary.uploader.explicit(
+                public_id,
+                type="upload",
+                resource_type=resource_type,
+                access_mode="public"
+            )
+            resource_info = cloudinary.api.resource(public_id, resource_type=resource_type)
+        
+        secure_url = upload_result["secure_url"]
+        try:
+            response = requests.get(secure_url, timeout=5)
+            response.raise_for_status()
+            logger.info(f"Uploaded e-way bill for order {order_id}, public_id: {public_id}, url: {secure_url}, resource_type: {resource_type}")
+        except requests.RequestException as e:
+            logger.error(f"Uploaded file {public_id} not accessible")
+            st.error(f"Uploaded file {public_id} not accessible")
+            return False
+        
+        save_ewaybill(
+            order_id=order_id,
+            org=st.session_state.current_org,
+            public_id=public_id,
+            url=secure_url,
+            file_name=file_name,
+            upload_date=datetime.now().isoformat(),
+            resource_type=resource_type
+        )
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error uploading e-way bill for order {order_id}")
+        st.error("An unexpected error occurred. Please try again or contact support.")
+        return False
+
+
+def delete_order(order_id):
+    try:
+        # Get deliveries for the order
+        deliveries = load_deliveries(order_id, st.session_state.current_org)
+
+        # Delete Cloudinary files for deliveries
+        for _, delivery in deliveries.iterrows():
+            if delivery["public_id"]:
+                try:
+                    result = cloudinary.uploader.destroy(delivery["public_id"], resource_type=delivery["resource_type"])
+                    if result.get("result") == "ok":
+                        logger.info(
+                            f"Deleted Cloudinary delivery file: {delivery['public_id']} (resource_type: {delivery['resource_type']})")
+                    else:
+                        logger.warning(
+                            f"Cloudinary delivery file deletion issue: {delivery['public_id']}, result: {result}")
+                except Exception as e:
+                    logger.error(f"Error deleting Cloudinary delivery file {delivery['public_id']}")
+                    st.error(f"Error deleting Cloudinary delivery file {delivery['public_id']}")
+
+        # Delete deliveries from database
+        supabase.table("deliveries").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        logger.info(f"Deleted all deliveries for order {order_id}")
+
+        # Delete order-specific e-way bill if exists
+        ewaybill_response = supabase.table("ewaybills").select("*").eq("order_id", order_id).eq("org",
+                                                                                                st.session_state.current_org).execute()
+        if ewaybill_response.data:
+            ewaybill = ewaybill_response.data[0]
+            if ewaybill["public_id"]:
+                try:
+                    result = cloudinary.uploader.destroy(ewaybill["public_id"], resource_type=ewaybill["resource_type"])
+                    if result.get("result") == "ok":
+                        logger.info(
+                            f"Deleted Cloudinary e-way bill: {ewaybill['public_id']} (resource_type: {ewaybill['resource_type']})")
+                    else:
+                        logger.warning(
+                            f"Cloudinary e-way bill deletion issue: {ewaybill['public_id']}, result: {result}")
+                except Exception as e:
+                    logger.error(f"Error deleting Cloudinary e-way bill {ewaybill['public_id']}")
+                    st.error(f"Error deleting Cloudinary e-way bill {ewaybill['public_id']}")
+
+        # Delete e-way bill from database
+        supabase.table("ewaybills").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        logger.info(f"Deleted e-way bill for order {order_id}")
+
+        # Delete the order
+        supabase.table("orders").delete().eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        logger.info(f"Deleted order {order_id}")
+
+        st.session_state.form_submitted = True
+        st.session_state.form_message = f"Order #{order_id} and all associated data deleted successfully!"
+        st.session_state.form_status = "success"
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting order {order_id}")
+        st.session_state.form_submitted = True
+        st.session_state.form_message = f"Error deleting order:"
+        st.session_state.form_status = "error"
+        return False
+
+def edit_order(order_id, receiver_name, date, expected_delivery_date, product, description, quantity, price, gst, advance_payment):
+  try: 
+    # Check if new quantity is valid
+    order_response = supabase.table("orders").select("delivered_quantity").eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+    if order_response.data:
+        delivered_quantity = order_response.data[0]["delivered_quantity"]
+        if quantity < delivered_quantity:
+            logger.error(f"Cannot reduce quantity below delivered amount: {quantity} < {delivered_quantity}")
+            return False
+    
+    basic_price = quantity * price
+    gst_amount = basic_price * (gst / 100)
+    total_amount_with_gst = basic_price + gst_amount
+    pending_amount = total_amount_with_gst - advance_payment
+    
+    response = supabase.table("orders").select("*").eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+    if response.data:
+        supabase.table("orders").update({
+            "receiver_name": receiver_name,
+            "date": str(date),
+            "expected_delivery_date": str(expected_delivery_date),
+            "product": product,
+            "description": description,
+            "quantity": quantity,
+            "price": price,
+            "basic_price": basic_price,
+            "gst": gst,
+            "advance_payment": advance_payment,
+            "total_amount_with_gst": total_amount_with_gst,
+            "pending_amount": pending_amount
+        }).eq("order_id", order_id).eq("org", st.session_state.current_org).execute()
+        logger.info(f"Order {order_id} updated successfully")
+        return True
+    logger.warning(f"Order {order_id} not found for editing")
+    return False
+  except Exception :
+      st.error("somthing went wrong !")
+def clear_form_feedback():
+    st.session_state.form_submitted = False
+    st.session_state.form_message = ""
+    st.session_state.form_status = ""
+
+def get_org_orders():
+    try:
+        response = supabase.table("orders").select("*").eq("org", st.session_state.current_org).execute()
+        df = pd.DataFrame(response.data)
+        return df if not df.empty else pd.DataFrame(columns=[
+            "order_id", "org", "receiver_name", "date", "expected_delivery_date",
+            "product", "description", "quantity", "price", "basic_price", "gst",
+            "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
+        ])
+    except Exception as e:
+        st.error("Something went wrong. Please try again or contact support.")
+        logger.error(f"Error fetching orders for org {st.session_state.current_org}: {str(e)}")
+        return pd.DataFrame(columns=[
+            "order_id", "org", "receiver_name", "date", "expected_delivery_date",
+            "product", "description", "quantity", "price", "basic_price", "gst",
+            "advance_payment", "total_amount_with_gst", "pending_amount", "status", "created_by"
+        ])
+
+# Analytics functions
+
+def get_total_revenue(df):
+  try:
+    if df.empty:
+        return 0
+    # Calculate total revenue as advance_payment + sum of total_amount_received from deliveries
+    revenue = 0
+    for _, row in df.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        revenue += row["advance_payment"] + delivery_amount
+    return revenue
+  except Exception :
+      st.error("somthing went wrong !")
+
+def get_monthly_summary(df):
+  try:
+    if df.empty:
+        return {"total": 0, "completed": 0, "pending": 0, "revenue": 0, "avg_order_value": 0, "mom_growth": 0}
+    
+    current_month = datetime.now().month
+    current_year = datetime.now().year
+    
+    df["date"] = pd.to_datetime(df["date"])
+    monthly_df = df[(df["date"].dt.month == current_month) & (df["date"].dt.year == current_year)]
+    
+    # Calculate revenue for the current month
+    monthly_revenue = 0
+    monthly_order_count = len(monthly_df)
+    for _, row in monthly_df.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        monthly_revenue += row["advance_payment"] + delivery_amount
+    
+    result = {
+        "total": monthly_order_count,
+        "completed": len(monthly_df[monthly_df["status"] == "Completed"]),
+        "pending": len(monthly_df[monthly_df["status"] == "Pending"]),
+        "revenue": monthly_revenue,
+        "avg_order_value": monthly_revenue / monthly_order_count if monthly_order_count > 0 else 0
+    }
+    
+    # Calculate revenue for the previous month
+    last_month = current_month - 1 if current_month > 1 else 12
+    last_month_year = current_year if current_month > 1 else current_year - 1
+    last_month_df = df[(df["date"].dt.month == last_month) & (df["date"].dt.year == last_month_year)]
+    
+    last_month_revenue = 0
+    for _, row in last_month_df.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        last_month_revenue += row["advance_payment"] + delivery_amount
+    
+    if last_month_revenue > 0 and monthly_revenue > 0:
+        result["mom_growth"] = ((monthly_revenue - last_month_revenue) / last_month_revenue * 100)
+    else:
+        result["mom_growth"] = 0
+    
+    return result
+  except Exception :
+      st.error("somthing went wrong !")
+
+# UI Components
+def show_login_page():
+    display_header()
+    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+
+    with tab1:
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submit_button = st.form_submit_button("Login")
+            
+            if submit_button:
+                if login(username, password):
+                    st.success("Login successful!")
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")
+                    
+        st.markdown("**Forgot Password?** Contact us at:")
+        st.markdown("📧 krishchaudhary144@gmail.com")
+        st.markdown("📞 +91 6353160662")
+        st.markdown("---")
+    
+    with tab2:
+        with st.form("signup_form"):
+            new_username = st.text_input("New Username")
+            new_password = st.text_input("New Password", type="password")
+            organization = st.text_input("Organization Name")
+            signup_button = st.form_submit_button("Sign Up")
+            
+            if signup_button:
+                if new_username and new_password and organization:
+                    if signup(new_username, new_password, organization):
+                        st.success("Sign up successful! You can now login.")
+                    else:
+                        st.error("Username already exists")
+                else:
+                    st.error("Please fill in all fields")
+
+def show_sidebar():
+    display_header()
+    
+    st.sidebar.title(f"Organization: {st.session_state.current_org}")
+    st.sidebar.write(f"Logged in as: {st.session_state.current_user}")
+    if st.session_state.is_admin:
+        st.sidebar.write("Role: Admin")
+    
+    menu_options = ["Dashboard", "Add Order", "Manage Orders", "Export Reports", "Account Settings"]
+    if st.session_state.is_admin:
+        menu_options.append("Admin Panel")
+    
+    menu = st.sidebar.radio("Navigation", menu_options)
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("Logout"):
+            logout()
+            st.rerun()
     
     with col2:
-        st.markdown("""
-        <div class="hero-content">
-            <div class="greeting">👋 Hello, I'm</div>
-            <h1 class="hero-name">Krish </br>Chaudhary</h1>
-            <div class="role-container">
-                <span class="role-prefix">I'm a passionate</span>
-                <div class="rotating-roles">
-                    <span class="role-item active">Data Analyst <span style="background: none; -webkit-text-fill-color: initial;">📊</span></span>
-                    <span class="role-item">Data Scientist <span style="background: none; -webkit-text-fill-color: initial;">🔬</span></span>
-                    <span class="role-item">ML Engineer <span style="background: none; -webkit-text-fill-color: initial;">🤖</span></span>
-                    <span class="role-item">BI Analyst <span style="background: none; -webkit-text-fill-color: initial;">📈</span></span>
-                </div>
-            </div>
-            <p class="hero-description">
-                🌟 <strong>Data Science Enthusiast & Innovator</strong><br>
-                🎓 Currently pursuing B.Tech in CSE-AI, diving deep into the world of Data Science.<br>
-                🚀 Passionate about leveraging <strong>cutting-edge technologies</strong> to unlock transformative insights from data.<br>
-                💻 Skilled in <strong>Machine Learning, Deep Learning, NLP, and AI</strong>, with expertise in Python, SQL, and Power BI.<br>
-                📊 Proficient in crafting <strong>impactful visualizations</strong> and predictive models to drive data-informed decisions.<br>
-                🧠 Srtong Knowledge in <strong>Natural Language Processing</strong> and advanced deep learning techniques for intelligent solutions.<br>
-                📚 <strong>Lifelong learner</strong> dedicated to mastering emerging data science tools and techniques.<br>
-                🔍 Eager to build <strong>innovative solutions</strong> that harness the power of data for real-world impact.
+        if st.button("Delete Account"):
+            st.session_state.show_delete_account = True
+            st.rerun()
+            
+    if st.session_state.show_delete_account:
+        st.sidebar.warning("Are you sure you want to delete your account? This action cannot be undone!")
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            if st.button("Yes, Delete"):
+                if delete_account(st.session_state.current_user):
+                    st.success("Account deleted successfully!")
+                    st.rerun()
+        with col2:
+            if st.button("Cancel"):
+                st.session_state.show_delete_account = False
+                st.rerun()
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Contact Us")
+    st.sidebar.markdown("""
+        <div style='font-size: 16px; padding: 10px; border-radius: 5px; background-color: #f0f2f6;'>
+            <p style='margin: 5px 0;'>
+                📧 <a href='mailto:krishchaudhary144@gmail.com' style='color: #1a73e8; text-decoration: none;'>
+                    krishchaudhary144@gmail.com
+                </a>
+            </p>
+            <p style='margin: 5px 0;'>
+                📞 <a href='tel:+916353160662' style='color: #1a73e8; text-decoration: none;'>
+                    +91 6353160662
+                </a>
             </p>
         </div>
         <style>
-            .rotating-roles {
-                position: relative;
-                height: 40px;
-                margin-top: 0.5rem;
-            }
-            .role-item {
-                position: absolute;
-                font-size: 1.8rem;
-                font-weight: 700;
-                background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
-                background-clip: text;
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                opacity: 0;
-                animation: roleRotate 12s infinite;
-                transition: opacity 0.5s ease;
-            }
-            .role-item:nth-child(1) { animation-delay: 0s; }
-            .role-item:nth-child(2) { animation-delay: 3s; }
-            .role-item:nth-child(3) { animation-delay: 6s; }
-            .role-item:nth-child(4) { animation-delay: 9s; }
-            @keyframes roleRotate {
-                0%, 20% { opacity: 1; transform: translateY(0); }
-                25%, 95% { opacity: 0; transform: translateY(-20px); }
-                100% { opacity: 0; transform: translateY(0); }
+            a:hover {
+                color: #d93025;
+                text-decoration: underline;
             }
         </style>
         """, unsafe_allow_html=True)
     
-    # Animated Stats Section
-    st.markdown("""
-    <div class="stats-section">
-        <div class="stat-card">
-            <div class="stat-number">2 Months+</div>
-            <div class="stat-label">Expiriance</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-number">6+</div>
-            <div class="stat-label">Projects Completed</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-number">5+</div>
-            <div class="stat-label">Technologies</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-number">3+</div>
-            <div class="stat-label">Certifications</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    return menu
+
+def show_admin_panel():
     
-    # Social Links Section
-    st.markdown("""
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-
-    <div class="social-section">
-        <h3 class="social-title">Let's Connect & Collaborate <span style="background: none; -webkit-text-fill-color: initial;">🤝</span></h3>
-        <div class="social-grid">
-            <a href="https://www.linkedin.com/in/krish-chaudhary-krc8252/" target="_blank" class="social-card linkedin" >
-                <div class="social-icon"><i class="fab fa-linkedin" style="color: #0A66C2;"></i></div>
-                <div class="social-info">
-                    <div class="social-name">LinkedIn</div>
-                    <div class="social-desc">Professional Network</div>
-                </div>
-            </a>
-            <a href="https://github.com/krish1440" target="_blank" class="social-card github">
-                <div class="social-icon"><i class="fab fa-github" style="color: #333;"></i></div>
-                <div class="social-info">
-                    <div class="social-name">GitHub</div>
-                    <div class="social-desc">Code Repository</div>
-                </div>
-            </a>
-            <a href="https://wa.me/+916353160662" target="_blank" class="social-card whatsapp">
-                <div class="social-icon"><i class="fab fa-whatsapp" style="color: #25D366;"></i></div>
-                <div class="social-info">
-                    <div class="social-name">WhatsApp</div>
-                    <div class="social-desc">Quick Chat</div>
-                </div>
-            </a>
-            <a href="mailto:krishchaudhary144@gmail.com" class="social-card email">
-                <div class="social-icon"><i class="fas fa-envelope" style="color: #EA4335;"></i></div>
-                <div class="social-info">
-                    <div class="social-name">Email</div>
-                    <div class="social-desc">Professional Contact</div>
-                </div>
-            </a>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+  st.title("Admin Panel")
+  try:  
+    if not st.session_state.is_admin:
+        st.error("Access denied. Admin privileges required.")
+        return
     
+    st.subheader("User Management")
     
-
+    users = load_users()
+    if not users:
+        st.info("No users found.")
+        return
     
-    # Hide the actual buttons and make cards clickable with custom CSS
-    st.markdown("""
-    <style>
-    div[data-testid="column"] > div > div > div > button[key="projects_btn_hidden"],
-    div[data-testid="column"] > div > div > div > button[key="contact_btn_hidden"] {
-        display: none;
-    }
-    </style>
+    user_data = [{"Username": k, "Organization": v["organization"]} for k, v in users.items()]
+    user_df = pd.DataFrame(user_data)
     
-    <script>
-    document.getElementById('projects-card').onclick = function() {
-        document.querySelector('button[key="projects_btn_hidden"]').click();
-    };
-    document.getElementById('contact-card').onclick = function() {
-        document.querySelector('button[key="contact_btn_hidden"]').click();
-    };
-    </script>
-    """, unsafe_allow_html=True)
-
-def education_section():
-    """Education section with timeline style"""
-    st.markdown('<h2 class="section-header">🎓 <span>Education</span></h2>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
+    st.write("**All Users**")
+    st.dataframe(user_df)
     
-    # Education Card
-    st.markdown("""
-    <div class="card">
-        <div class="timeline-item">
-            <h2 class="card-title">2023 - 2027</h2>
-            <h3 class="card-subtitle">Parul University </br> Vadodara, Gujrat, India</h3>
-            <p style="font-weight: 600; color: #3498db;">B.Tech CSE-AI (2023 - 2027)</p>
-            <p class="card-text">
-                As a student at Parul University, I'm immersed in a dynamic academic environment renowned for its 
-                commitment to excellence. With a focus on practical learning and cutting-edge technology, I'm building 
-                a strong foundation in Computer Science with specialization in Artificial Intelligence and Machine Learning.
-                The curriculum includes advanced topics in data structures, algorithms, machine learning, deep learning, 
-                and artificial intelligence applications.
-            </p>
-        </div>
-        <div class="timeline-item">
-            <h2 class="card-title">2021 - 2023</h2>
-            <h3 class="card-subtitle">Jawahar Navodaya Vidyalaya </br>Mehsana, Gujrat, India </h3>
-            <p style="font-weight: 600; color: #3498db;">HSC (2021 - 2023)</p>
-            <p class="card-text">
-                As a student at Jawahar Navodaya Vidyalaya, I am immersed in a 
-                vibrant and inclusive residential academic environment dedicated
-                to nurturing rural talent. With a focus on holistic development 
-                and high-quality education, I am building a strong foundation in 
-                a CBSE-affiliated curriculum spanning sciences, mathematics, languages,
-                and humanities. The program emphasizes critical thinking, experiential 
-                learning, and co-curricular activities, supported by modern facilities 
-                like smart classrooms and well-equipped labs, preparing me to excel in a
-                competitive world while fostering national integration and social values.
-            </p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def certifications_section():
-    """Certifications section with download link inside the card"""
-    st.markdown('<h2 class="section-header"> 🏆 <span>Certifications</span></h2>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
+    st.subheader("Delete User")
+    selected_user = st.selectbox("Select User to Delete", options=[u["Username"] for u in user_data if u["Username"] != st.session_state.current_user])
     
-    # Sample certifications - replace with your actual certifications
-    certifications = [
-        {
-            "name": "Generative AI for Data-Driven Business Decision-Making",
-            "provider": "IIM Mumbai",
-            "file": "certificates/gen_ai.pdf",
-            "description": "In collaboration with <strong> National Skill Development Corporation (NSDC)</strong> and <strong>CoE Logistics & Supply Chain Management IIM Mumbai Under the vision of Viksit Bharat @2047</strong> and the mission of <strong>PM GatiShakti</strong> National Master Plan"
-            "Participated in a national-level program focused on applying Generative AI to enhance data-driven decision-making in business and supply chain contexts.<br> Gained hands-on experience with AI-powered tools and frameworks for business intelligence, predictive analytics, and strategic planning. <br> Explored the integration of AI in logistics and supply chain management, aligning with the objectives of <strong>India’s PM GatiShakti initiative</strong>. <br> Developed a deep understanding of how emerging AI technologies can transform data into actionable insights for efficient and scalable business operations.<br>  Contributed to the broader vision of <strong>Viksit Bharat @2047</strong>, promoting innovation and digital transformation across critical sectors."
-        },
-        {
-            "name": "IBM Data Analyst Professional Certificate",
-            "provider": "Coursera-IBM",
-            "file": "certificates/IBM.pdf",
-            "description": "<strong>Data Analysis :</strong>Fundamentals Understanding the data analytics process, data structures, and the roles of data professionals.<br>"
-                            "<strong>Excel :</strong>Excel Performing basic to advanced spreadsheet tasks, including data entry, formulas, pivot tables, and data visualization.<br>"
-
-                             "<strong>Python :</strong>Python Utilizing libraries like Pandas and NumPy for data manipulation and analysis.<br>"
-
-                               "<strong>SQL :</strong>SQL Querying databases to extract and analyze data.<br>"
-
-                                "<strong>IBM Cognos Analytics :</strong>IBM Cognos Analytics Creating interactive dashboards and visualizations to communicate data insights.<br>"
-
-                                "<strong>Generative AI Tools :</strong>Generative AI Tools Exploring how AI can enhance data analysis processes.<br>"
-        },
-        {
-            "name": "Data Analytics and Visualization Job Simulation",
-            "provider": "Forage-accenture",
-            "file": "certificates/accenture.pdf",
-            "description": "Completed a virtual job simulation focused on data analytics and visualization, designed by Accenture through Forage."
-            "Analyzed a large dataset to identify trends, patterns, and key insights relevant to a client’s business performance."
-            "Created a <strong>comprehensive dashboard</strong> using Microsoft Excel and data visualization tools to present actionable recommendations."
-            "Applied storytelling techniques to effectively communicate data-driven insights to non-technical stakeholders."
-            "Gained experience in handling <strong>client-centric analytical</strong> challenges, replicating real-world consulting scenarios."
-        }
-        
-    ]
-    
-    for cert in certifications:
-        # Generate base64-encoded data URI for the certificate file
-        try:
-            with open(cert['file'], "rb") as file:
-                file_data = file.read()
-                base64_encoded = base64.b64encode(file_data).decode()
-                file_href = f"data:application/pdf;base64,{base64_encoded}"
-                file_name = cert['file'].split('/')[-1]  # Extract file name for download
-        except FileNotFoundError:
-            file_href = "#"  # Fallback to avoid breaking the layout
-            file_name = cert['file']
-            error_message = f"Certificate file '{cert['file']}' not found"
-        except Exception as e:
-            file_href = "#"
-            file_name = cert['file']
-            error_message = f"Error accessing certificate file: {str(e)}"
+    if st.button("Delete Selected User"):
+        if selected_user:
+            if delete_account(selected_user, by_admin=True):
+                st.success(f"User {selected_user} deleted successfully!")
+                st.rerun()
+            else:
+                st.error(f"Failed to delete user {selected_user}.")
         else:
-            error_message = None
+            st.error("Please select a user to delete.")
+  except Exception as e:
+      st.error("somthing went wrong !")
+
+def show_add_order():
+    st.title("Add Order")
+    
+    with st.form("add_order_form"):
+        receiver_name = st.text_input("Receiver Name")
+        date = st.date_input("Order Date", value=datetime.today().date())
+        expected_delivery_date = st.date_input("Expected Delivery Date", value=datetime.today().date())
+        product = st.text_input("Product")
+        description = st.text_area("Description (Optional)")
         
-        # Render the card with the downloadable link
-        st.markdown(f"""
-        <div class="card">
-            <h3 class="card-title">{cert['name']}</h3>
-            <h4 class="card-subtitle">Provided by: {cert['provider']}</h4>
-            <p class="card-text">{cert['description']}</p>
-            <div style="margin-top: 1rem;">
-                <a class="download-btn" href="{file_href}" download="{file_name}">
-                    📜 Download Certificate
-                </a>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            quantity = st.number_input("Quantity", min_value=1, value=1, key="quantity")
+        with col2:
+            price = st.number_input("Price per Unit (₹)", min_value=0.01, value=0.01, step=0.01, key="price")
         
-        # Display error message if file access failed
-        if error_message:
-            st.error(error_message)
-
-def skills_section():
-    """Skills section with categorized skill boxes"""
-    st.markdown('<h2 class="section-header"> ⚡ <span>Skills</span></h2>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
+        basic_price = quantity * price
+        st.write(f"**Basic Price: ₹{basic_price:.2f}**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            gst = st.number_input("GST (%)", min_value=0.0, value=0.0, step=0.1, key="gst")
+        with col2:
+            advance_payment = st.number_input("Advance Payment (₹)", min_value=0.0, value=0.0, step=0.01, key="advance_payment")
+        
+        total_amount_with_gst = basic_price + (basic_price * (gst / 100))
+        pending_amount = total_amount_with_gst - advance_payment
+        
+        # Display calculations in real-time
+        st.markdown("---")
+        st.write(f"**Total Amount with GST: ₹{total_amount_with_gst:.2f}**")
+        st.write(f"**Pending Amount: ₹{pending_amount:.2f}**")
+        
+        # Added submit button
+        submit_button = st.form_submit_button("Add Order")
+        
+        if submit_button:
+            if receiver_name and product:
+                if add_order(receiver_name, date, expected_delivery_date, product, description, 
+                            quantity, price, gst, advance_payment):
+                    st.success("Order added successfully!")
+                    st.rerun()
+            else:
+                st.error("Receiver Name and Product are required fields!")
     
-    skills_data = {
-        "Programming Languages": [
-            "Python", "Java", "C", "HTML", "CSS", "JavaScript"
-        ],
-        "Data Science & ML": [
-            "Pandas", "NumPy", "Scikit-learn", "TensorFlow", "Keras",
-            "Matplotlib", "Seaborn", "XGBoost", "LightGBM", "CatBoost",
-            "NLTK", "SpaCy", "Transformers", "OpenCV", "Statsmodels"
-        ],
-        "Data Analysis & BI Tools": [
-            "Power BI", "Tableau", "Excel", "Advanced Excel", "Google Sheets",
-            "IBM Cognos", "Looker"
-        ],
-        "Development Environments": [
-            "Git", "Docker", "VS Code", "Jupyter", "Spyder", "PyCharm",
-            "Anaconda", "Eclipse", "Colab","mlflow"
-        ],
-        "Databases & DBMS": [
-            "MySQL", "PostgreSQL", "MongoDB", "SQLite", "Oracle DB",
-            "Snowflake", "Google BigQuery", "Amazon Redshift"
-        ],
-        "Cloud Platforms": [
-            "AWS", "Google Cloud", "Azure", "Heroku"
-        ],
-        "Other Skills": [
-            "Business Analysis", "Data Analysis", "Customer Acquisition",
-            "Time Series Forecasting", "Big Data Processing", "ETL Pipelines"
-        ],
-        "Soft Skills": [
-            "Analytical Thinking", "Problem Solving", "Communication",
-            "Team Collaboration", "Team Leadership", "Project Management",
-            "Storytelling with Data", "Stakeholder Engagement"
-        ]
-    }
-
-    cols = st.columns(2)
+    if st.session_state.form_submitted and st.session_state.clear_form:
+        st.session_state.clear_form = False
+        st.rerun()
+        
+def show_dashboard():
     
-    for i, (category, skills) in enumerate(skills_data.items()):
-        with cols[i % 2]:
-            st.markdown(f"""
-            <div class="card">
-                <h3 class="card-title">{category}</h3>
-                <div>
-                    {''.join([f'<span class="skill-tag">{skill}</span>' for skill in skills])}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-def projects_section():
-    """Projects section"""
-    st.markdown('<h2 class="section-header"> 🚀  <span>Projects</span></h2>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
+    st.title("Dashboard")
     
-    # Sample projects - replace with your actual projects
-    projects = [
-        {
-            "name": "<strong>OEA-OrderEasy-Analytics</strong>",
-            "github": "https://oea-ordereasy-analytic.streamlit.app/",
-            "description": "🚀 <strong>Smart Order Management System</strong> built using Streamlit to streamline order processing, tracking, and analytics for businesses.<br>"
-                   "🗄️ Integrated with <strong>Supabase</strong> (PostgreSQL) for secure database management and <strong>Cloudinary</strong> for e-way bill (PDF/image) storage.<br>"
-                   "🧾 <strong>Key Features:</strong><br>"
-                   "• 📋 Order creation, editing, deletion, and status tracking<br>"
-                   "• 📎 E-way bill upload, download, and replacement<br>"
-                   "• 📊 <strong>Advanced analytics</strong>: Revenue trends, top products/customers, CLV, retention, RFM segmentation, and sales forecasting<br>"
-                   "• 👤 <strong>User authentication</strong> with admin panel for managing users<br>"
-                   "• 📤 Exportable Excel reports for orders and revenue summaries<br>"
-                   "• 🧭 Responsive UI with sidebar navigation and expandable order details<br>"
-                   "🔧 <strong>Tech Stack:</strong> Streamlit, Python, Supabase, Cloudinary, Pandas, NumPy, Scikit-learn, Matplotlib, Seaborn<br>"
-                   "☁️ Deployed on <strong>Streamlit Cloud</strong> with .env-based configuration for secure keys and credentials."
-        },
-        {
-            "name": "<strong>Handwritten Digits Classification</strong><strong>",
-            "github": "https://github.com/krish1440/Hand_Digit_Classification",
-            "description": "🧠 <strong>Web-based application</strong> for recognizing handwritten digits (0–9) using a deep learning model trained on the <strong>MNIST</strong> dataset.<br>"
-                   "🎨 Users draw digits on an interactive canvas, and the model predicts the digit with <strong>confidence scores</strong> and <strong>probability distribution</strong>.<br>"
+    org_orders = get_org_orders()
+    
+    if org_orders.empty:
+        st.info("No orders yet. Add some orders to see your dashboard.")
+        return
+    
+    org_orders["date"] = pd.to_datetime(org_orders["date"])
+    org_orders["expected_delivery_date"] = pd.to_datetime(org_orders["expected_delivery_date"])
+    
+    monthly_summary = get_monthly_summary(org_orders)
+    
+    FIGURE_WIDTH = 10
+    FIGURE_HEIGHT = 6
 
-                   "🧾 <strong>Features:</strong><br>"
-                   "• 🖌️ Interactive drawing canvas for input<br>"
-                   "• ✅ Predict button to classify digits<br>"
-                   "• ❌ Clear button to reset the canvas<br>"
-                   "• 📈 Displays predicted digit with confidence percentage<br>"
-                   "• 📊 Shows probability distribution for digits 0–9<br>"
-                   "• 📱 Responsive design for both desktop and mobile<br>"
-
-                   "🛠️ <strong>Tech Stack:</strong><br>"
-                   "• 🧑‍💻 <strong>Frontend:</strong> HTML, CSS, JavaScript<br>"
-                   "• 🔙 <strong>Backend:</strong> Flask (Python)<br>"
-                   "• 🤖 <strong>Deep Learning:</strong> TensorFlow/Keras trained on MNIST dataset<br>"
-        },
-        {
-            "name": "<strong>Loan status prediction</strong>",
-            "github": "https://github.com/krish1440/Loan_status_prediction",
-            "description": "🔍 <strong>Machine learning-powered web application</strong> and API to predict loan approval outcomes based on applicant and loan details.<br>"
-                   "Designed to assist banks and financial institutions in making faster and more reliable loan eligibility decisions.<br>"
-
-                   "🧾 <strong>Features (Web App):</strong><br>"
-                   "• 🖥️ Intuitive web interface for entering applicant information<br>"
-                   "• 🧠 Backend powered by a <strong>pretrained ML model</strong> for real-time predictions<br>"
-                   "• 📊 Visual tools to explore loan trends and insights<br>"
-                   "• ☁️ <strong>Deployed on Render</strong> for easy access and scalability<br>"
-
-                   "🔗 <strong>Features (RESTful API):</strong><br>"
-                   "• ⚙️ Predict loan approval status via a <strong>production-ready API</strong><br>"
-                   "• 🔣 Handles both categorical and numerical inputs efficiently<br>"
-                   "• 🧩 Easily integratable into other applications or services<br>"
-
-                   "🛠️ <strong>Tech Stack:</strong><br>"
-                   "• 🐍 Python, Flask for backend<br>"
-                   "• 🤖 Scikit-learn for ML model training and inference<br>"
-                   "• 🧪 Pandas, NumPy for data preprocessing<br>"
-                   "• 🌐 HTML, CSS, JavaScript for the frontend<br>"
-                   "• 🚀 Render for deployment<br>"
-        },
-        {
-            "name": "<strong>Crop-Production-Analysisn</strong>",
-            "github": "https://github.com/krish1440/Crop-Production-Analysis-",
-            "description": "📊 <strong>Data-driven analytics platform</strong> for evaluating and visualizing crop production trends across regions in India.<br>"
-                   "Developed during an internship at <strong>iNeuron Intelligence Pvt Ltd</strong> to aid agricultural decision-making through insights on productivity, regional performance, and crop trends.<br>"
-
-                   "🔍 <strong>Key Features:</strong><br>"
-                   "• 🧹 Rigorous <strong>data cleaning and validation</strong> to ensure dataset accuracy<br>"
-                   "• 📐 <strong>Standardization</strong> of units and formatting for time-series analysis<br>"
-                   
-                   "• 📈 Enriched data with calculated <strong>productivity metrics (Production/Area)</strong> and crop categorization<br>"
-                   "• 🧠 Analysis using <strong>Python (Pandas, NumPy)</strong> and visual dashboards built in <strong>Power BI</strong><br>"
-                   "• 🌍 Regional insights through added 'Region' tagging for geographic analysis<br>"
-
-                   "🛠️ <strong>Tech Stack:</strong><br>"
-                   "• 🐍 Python (Pandas, NumPy) for data preprocessing and statistical analysis<br>"
-                   "• 📊 Power BI for interactive dashboards<br>"
-
-                   "🧾 <strong>Deliverables:</strong><br>"
-                   "• 📄 Project Report with methodology and key insights<br>"
-                   "• 🧠 HLD/LLD documentation outlining system and data flow<br>"
-                   "• 🧭 Architecture diagram for visualizing processing pipeline<br>"
-                   "• 🎥 Demo video showcasing features and findings<br>"
-
-                   "🌟 <strong>Key Insights:</strong><br>"
-                   "• 💰 Identification of profitable crops (e.g., wheat, maize, soybean)<br>"
-                   "• 🌍 Highlighted top-producing states (Uttar Pradesh, Maharashtra, etc.)<br>"
-                   "• 📈 Detected production growth trends and productivity disparities<br>"
-                   "• 📍 Mapped crop performance regionally to guide resource allocation<br>"
-        },
-        {
-            "name": "<strong>Accenture-Social-Buzz-Forage</strong>",
-            "github": "https://github.com/krish1440/Accenture-Social-Buzz-Forage",
-            "description": "🌟 <strong>Virtual internship project</strong> focused on leveraging social media analytics to generate actionable business insights.<br>"
-
-                   "🔍 <strong>Project Overview:</strong><br>"
-                   "Analyze social media data to understand brand sentiment, customer engagement, and trending topics.<br>"
-                   "Develop dashboards and reports to visualize social buzz.<br>"
-
-                   "✨ <strong>Key Tasks & Features:</strong><br>"
-                   "• 📈 Perform sentiment analysis and trend detection from social media feeds.<br>"
-                   "• 🧰 Use data visualization tools to create impactful dashboards.<br>"
+    st.subheader("All-Time Metrics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Orders (All Time)", len(org_orders))
+    with col2:
+        st.metric("Completed Orders", len(org_orders[org_orders["status"] == "Completed"]))
+    with col3:
+        st.metric("Pending Orders", len(org_orders[org_orders["status"] == "Pending"]))
+    with col4:
+        total_delivered = org_orders["delivered_quantity"].sum()
+        st.metric("Total Units Delivered", total_delivered)
+    
+    st.subheader("Current Month Metrics")
+    current_month = datetime.now().month
+    current_year = datetime.now().year
+    monthly_df = org_orders[(org_orders["date"].dt.month == current_month) & (org_orders["date"].dt.year == current_year)]
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Orders (This Month)", len(monthly_df))
+    with col2:
+        st.metric("Completed Orders", len(monthly_df[monthly_df["status"] == "Completed"]))
+    with col3:
+        st.metric("Pending Orders", len(monthly_df[monthly_df["status"] == "Pending"]))
+    with col4:
+        monthly_delivered = monthly_df["delivered_quantity"].sum()
+        st.metric("Units Delivered", monthly_delivered)
+    
+    st.subheader("📦 Quantity Analysis")
+    org_orders["month"] = pd.to_datetime(org_orders["date"]).dt.strftime("%b %Y")
+    monthly_quantity = org_orders.groupby("month")["quantity"].sum().reset_index(name="monthly_quantity")
+    monthly_quantity['month_dt'] = pd.to_datetime(monthly_quantity['month'], format="%b %Y")
+    monthly_quantity = monthly_quantity.sort_values('month_dt').drop(columns='month_dt')
+    
+    if len(monthly_quantity) > 1:
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.lineplot(data=monthly_quantity, x="month", y="monthly_quantity", marker="o", ax=ax)
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Monthly Quantity")
+        ax.set_title("Monthly Quantity Trend")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
+    st.subheader("📅 Year-wise Revenue")
+    # Calculate revenue for each order
+    org_orders["revenue"] = 0.0
+    for idx, row in org_orders.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        org_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
+    
+    # Extract year from date and group by year
+    org_orders["year"] = org_orders["date"].dt.year
+    yearly_revenue = org_orders.groupby("year")["revenue"].sum().reset_index()
+    yearly_revenue = yearly_revenue.sort_values("year", ascending=False)  # Sort in decreasing order
+    yearly_revenue["year"] = yearly_revenue["year"].astype(str)
+    
+    # Create dropdown for selecting year
+    if not yearly_revenue.empty:
+        selected_year = st.selectbox("Select Year for Revenue Details", 
+                                     options=yearly_revenue["year"].tolist(), 
+                                     key="year_wise_revenue")
+        
+        # Display revenue for the selected year
+        selected_revenue = yearly_revenue[yearly_revenue["year"] == selected_year]["revenue"].iloc[0]
+        st.metric(f"Revenue for {selected_year}", f"₹{selected_revenue:.2f}")
+        
+        # Display table of yearly revenue
+        st.write("**Year-wise Revenue Summary**")
+        yearly_revenue_display = yearly_revenue[["year", "revenue"]].rename(
+            columns={"year": "Year", "revenue": "Total Revenue (₹)"}
+        )
+        yearly_revenue_display["Total Revenue (₹)"] = yearly_revenue_display["Total Revenue (₹)"].map(
+            lambda x: f"{x:.2f}"
+        )
+        st.dataframe(yearly_revenue_display)
+    else:
+        st.info("No revenue data available for any year.")
+    st.subheader("📈 Revenue and Financial Analysis")
+    org_orders["month"] = pd.to_datetime(org_orders["date"]).dt.strftime("%b %Y")
+    # Calculate revenue as advance_payment + total_amount_received from deliveries
+    org_orders["revenue"] = 0.0
+    for idx, row in org_orders.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        org_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
+    
+    monthly_revenue = org_orders.groupby("month")["revenue"].sum().reset_index()
+    monthly_revenue['month_dt'] = pd.to_datetime(monthly_revenue['month'], format="%b %Y")
+    monthly_revenue = monthly_revenue.sort_values('month_dt').drop(columns='month_dt')
+    
+    if len(monthly_revenue) >= 2:
+        current_revenue = monthly_revenue["revenue"].iloc[-1]
+        previous_revenue = monthly_revenue["revenue"].iloc[-2]
+        delta = ((current_revenue - previous_revenue) / previous_revenue * 100) if previous_revenue > 0 else 0
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Revenue", f"₹{org_orders['revenue'].sum():.2f}", 
+                      f"{delta:.1f}% from previous month")
+        with col2:
+            avg_order_value = org_orders["revenue"].mean()
+            st.metric("Average Order Value", f"₹{avg_order_value:.2f}")
+    else:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Revenue", f"₹{org_orders['revenue'].sum():.2f}")
+        with col2:
+            avg_order_value = org_orders["revenue"].mean()
+            st.metric("Average Order Value", f"₹{avg_order_value:.2f}")
+    
+    if len(monthly_revenue) > 1:
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.lineplot(data=monthly_revenue, x="month", y="revenue", marker="o", ax=ax)
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Revenue (₹)")
+        ax.set_title("Monthly Revenue Trend")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    st.subheader("👥 Receiver Analysis")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        receiver_quantity = org_orders.groupby("receiver_name")["quantity"].sum().reset_index()
+        receiver_quantity = receiver_quantity.sort_values("quantity", ascending=False).head(5)
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=receiver_quantity, x="quantity", y="receiver_name", ax=ax, palette="Blues_d")
+        ax.set_xlabel("Total Quantity")
+        ax.set_ylabel("Receiver")
+        ax.set_title("Top Receivers by Quantity")
+        for i, v in enumerate(receiver_quantity["quantity"]):
+            ax.text(v, i, f"{v}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    with col2:
+        receiver_revenue = org_orders.groupby("receiver_name")["revenue"].sum().reset_index()
+        receiver_revenue = receiver_revenue.sort_values("revenue", ascending=False).head(10)
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=receiver_revenue, x="revenue", y="receiver_name", ax=ax, palette="Greens_d")
+        ax.set_xlabel("Total Revenue (₹)")
+        ax.set_ylabel("Receiver")
+        ax.set_title("Top Receivers by Revenue")
+        for i, v in enumerate(receiver_revenue["revenue"]):
+            ax.text(v, i, f"₹{v:.2f}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    st.subheader("📦 Product Analysis")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        product_quantity = org_orders.groupby("product")["quantity"].sum().reset_index()
+        product_quantity = product_quantity.sort_values("quantity", ascending=False).head(10)
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=product_quantity, x="quantity", y="product", ax=ax, palette="Oranges_d")
+        ax.set_xlabel("Total Quantity")
+        ax.set_ylabel("Product")
+        ax.set_title("Top Products by Quantity")
+        for i, v in enumerate(product_quantity["quantity"]):
+            ax.text(v, i, f"{v}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    with col2:
+        product_revenue = org_orders.groupby("product")["revenue"].sum().reset_index()
+        product_revenue = product_revenue.sort_values("revenue", ascending=False).head(5)
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=product_revenue, x="revenue", y="product", ax=ax, palette="Purples_d")
+        ax.set_xlabel("Total Revenue (₹)")
+        ax.set_ylabel("Product")
+        ax.set_title("Top Products by Revenue")
+        for i, v in enumerate(product_revenue["revenue"]):
+            ax.text(v, i, f"₹{v:.2f}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    st.subheader("👥 Advanced Customer Analysis")
+    col1, col2 = st.columns(2)
+    with col1:
+      st.subheader("Customer Lifetime Value")
+      customer_metrics = org_orders.groupby("receiver_name").agg({
+        "total_amount_with_gst": ["sum", "count"],
+        "date": "min"
+      }).reset_index()
+      customer_metrics.columns = ["receiver_name", "total_spent", "order_count", "first_order"]
+      customer_metrics["customer_age"] = (datetime.now() - customer_metrics["first_order"]).dt.days / 30
+      customer_metrics["clv"] = customer_metrics["total_spent"] / customer_metrics["customer_age"].replace(0, 1)
+      top_clv = customer_metrics.sort_values("clv", ascending=False).head(5)
+      if not top_clv.empty:
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        # Ensure the order matches the sorted DataFrame
+        sns.barplot(data=top_clv, x="clv", y="receiver_name", ax=ax, palette="Blues_d", order=top_clv["receiver_name"])
+        ax.invert_xaxis()  # Invert the x-axis to plot bars from right to left
+        ax.set_xlabel("Customer Lifetime Value (₹/month)")
+        ax.set_ylabel("Receiver")
+        ax.set_title("Top Customers by Lifetime Value")
+        for i, v in enumerate(top_clv["clv"]):
+            # Corrected ax.text() call: x, y, string, and formatting
+            ax.text(x=v * 0.95, y=i, s=f"₹{v:.2f}", va="center", ha="right")  # Position text slightly inside the bar
+        plt.tight_layout()
+        st.pyplot(fig)
+    with col2:
+        st.subheader("Customer Retention")
+        customer_orders = org_orders.groupby(["receiver_name", org_orders["date"].dt.to_period("M")]).size().reset_index(name="orders")
+        repeat_customers = customer_orders.groupby("receiver_name").size()
+        repeat_rate = (sum(repeat_customers > 1) / len(repeat_customers)) * 100 if len(repeat_customers) > 0 else 0
+        st.metric("Repeat Customer Rate", f"{repeat_rate:.1f}%")
+        monthly_retention = customer_orders.groupby("date")["receiver_name"].nunique().reset_index()
+        monthly_retention["date"] = monthly_retention["date"].astype(str)
+        if len(monthly_retention) > 1:
+            fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+            sns.lineplot(data=monthly_retention, x="date", y="receiver_name", marker="o", ax=ax)
+            ax.set_xlabel("Month")
+            ax.set_ylabel("Unique Customers")
+            ax.set_title("Customer Retention Trend")
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig)
+    
+    st.subheader("📦 Advanced Product Analysis")
+    st.subheader("Product Demand Trends")
+    product_trends = org_orders.groupby(["product", org_orders["date"].dt.to_period("M")])["quantity"].sum().reset_index()
+    product_trends["date"] = product_trends["date"].astype(str)
+    top_products = org_orders["product"].value_counts().head(3).index
+    product_trends = product_trends[product_trends["product"].isin(top_products)]
+    if not product_trends.empty:
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.lineplot(data=product_trends, x="date", y="quantity", hue="product", marker="o", ax=ax)
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Quantity Sold")
+        ax.set_title("Top Products Demand Trend")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    st.subheader("📈 Advanced Time Series Analysis")
+    if not org_orders.empty:
+        org_orders["month_period"] = org_orders["date"].dt.to_period("M")
+        monthly_metrics = org_orders.groupby("month_period").agg({
+            "revenue": "sum",
+            "quantity": "sum",
+            "pending_amount": "sum"
+        }).reset_index()
+        monthly_metrics = monthly_metrics.sort_values("month_period")
+        monthly_metrics["month_period"] = monthly_metrics["month_period"].astype(str)
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(FIGURE_WIDTH, 12), sharex=True)
+        sns.lineplot(data=monthly_metrics, x="month_period", y="revenue", marker="o", ax=ax1, color="blue")
+        ax1.set_title("Monthly Revenue Trend")
+        ax1.set_ylabel("Revenue (₹)")
+        ax1.grid(True)
+        sns.lineplot(data=monthly_metrics, x="month_period", y="quantity", marker="o", ax=ax2, color="green")
+        ax2.set_title("Monthly Quantity Sold")
+        ax2.set_ylabel("Units")
+        ax2.grid(True)
+        sns.lineplot(data=monthly_metrics, x="month_period", y="pending_amount", marker="o", ax=ax3, color="red")
+        ax3.set_title("Monthly Pending Amount")
+        ax3.set_xlabel("Month")
+        ax3.set_ylabel("Pending (₹)")
+        ax3.grid(True)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    st.subheader("🔮 Advanced Sales Forecasting")
+    if len(org_orders) >= 10:
+        org_orders["date_only"] = org_orders["date"].dt.date
+        daily_sales = org_orders.groupby("date_only")["revenue"].sum().reset_index()
+        daily_sales["day_number"] = range(1, len(daily_sales) + 1)
+        
+        try:
+            X = daily_sales["day_number"].values.reshape(-1, 1)
+            y = daily_sales["revenue"].values
+            model = LinearRegression()
+            model.fit(X, y)
             
-                   "🛠️ <strong>Tech Stack & Skills:</strong><br>"
-                   "• 🐍 Python (Pandas, NLTK) for data processing and sentiment analysis<br>"
-                   "• 📊 Tableau / Power BI for dashboard creation<br>"
-        },
-        {
-            "name": "<strong>Student Managment Systerm</strong>",
-            "github": "https://github.com/krish1440/STUDENT_GRADE",
-            "description": "📚 <strong>Comprehensive program</strong> to efficiently manage student records with easy-to-use data handling and CSV integration.<br>"
-
-                   "✨ <strong>Features:</strong><br>"
-                   "• ➕ <strong>Add Student Data:</strong> Quickly add new students with details like name, ID, age, subjects, marks, and credit points.<br>"
-                   "• ✏️ <strong>Update Student Data:</strong> Modify existing student info to keep records accurate.<br>"
-                   "• 🗑️ <strong>Delete Student Data:</strong> Remove student entries when needed (use cautiously!).<br>"
-                   "• 👁️ <strong>Display Student Data:</strong> View detailed information for individual students or the full list.<br>"
-                   "• 💾 <strong>Save to CSV:</strong> Store all student data in CSV files for persistence and future access.<br>"
-        }
-    ]
-    
-    for project in projects:
-        st.markdown(f"""
-        <div class="card">
-            <h3 class="card-title">{project['name']}</h3>
-            <p class="card-text">{project['description']}</p>  
-                <a href="{project['github']}" target="_blank" class="download-btn">
-                    🔗 View on github
-                </a>
-        </div>
-        """, unsafe_allow_html=True)
-
-def experience_section():
-    """Experience section with download link inside the card"""
-    st.markdown('<h2 class="section-header"> 💼  <span>Experience</span></h2>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
-    
-    # Sample experiences - replace with your actual experiences
-    experiences = [
-        {
-            "company": "Abhay Engineering",
-            "position": "Buisness Analyst Intern",
-            "period": "April 2025 - May 2024",
-            "certificate": "experience/ineuron_certificate.pdf",
-            "description": "🚀 Developed <strong>OrderEasy Analytics</strong>, a Streamlit-based app for MSMEs, automating <strong>order creation</strong> and <strong>delivery tracking</strong> with real-time status and payment updates, reducing operational errors by <strong>90%</strong>.<br>"
-        "📊 Designed <strong>interactive dashboards</strong> leveraging <strong>RFM analysis</strong>, <strong>Customer Lifetime Value (CLV)</strong>, and <strong>sales forecasting</strong>, boosting customer retention by <strong>20%</strong> and revenue by <strong>35%</strong>.<br>"
-        "☁️ Implemented <strong>cloud-based storage</strong> for e-way bills and delivery documents, cutting document retrieval time by <strong>40%</strong> and ensuring regulatory compliance.<br>"
-        "📈 Created <strong>customizable Excel reports</strong> for orders, deliveries, and revenue, filtered by status or date, enabling efficient <strong>business planning</strong>.<br>"
-        "🔍 Conducted <strong>trend analysis</strong> to forecast demand and optimize <strong>business scalability</strong>, enhancing operational workflows.<br>"
-        "💸 Integrated <strong>real-time payment tracking</strong> with GST calculations, improving financial transparency and reducing payment disputes by <strong>85%</strong>.<br>"
-        "📋 Streamlined <strong>document management</strong> by enabling secure uploads of e-way bills and proofs, enhancing <strong>audit readiness</strong> by <strong>50%</strong>.<br>"
-        "📦 Performed <strong>product performance analysis</strong>, driving <strong>inventory optimization</strong> and reducing stockouts by <strong>30%</strong>.<br>"
-        "💡 Built <strong>customer segmentation models</strong> using RFM metrics, enabling targeted marketing strategies that increased engagement by <strong>25%</strong>.<br>"
-        "🤝 Collaborated with <strong>cross-functional teams</strong> to drive <strong>data-driven strategies</strong>, fostering growth and operational excellence."
-        },
-        {
-            "company": "INeuron Intelligence Pvt Ltd",
-            "position": "Data Analyst Intern</br>Remote",
-            "period": "June 2024 - July 2024",
-            "certificate": "experience/ineuron_certificate.pdf",
-            "description": "🌾 Led a <strong>Crop Production Analysis project</strong> analyzing a dataset of over 240,000 rows from 1997–2015, using <strong>Python</strong> libraries (Pandas, NumPy, Matplotlib, Seaborn) for data preprocessing and visualization.<br>"
-                "🧹 Performed extensive <strong>data preprocessing</strong>, handling 3,730 null values, removing outliers (e.g., zero production rows), and standardizing crop names (e.g., merging synonyms like Paddy to Rice) to ensure data quality.<br>"
-                "📊 Developed <strong>interactive Power BI dashboards</strong> to visualize crop production trends across seasons (Kharif, Rabi, Whole Year), states, and zones, enabling stakeholders to identify key agricultural insights.<br>"
-                "🔍 Uncovered <strong>critical insights</strong>, including coconut’s 92% production dominance, leading to separate dataset analyses for balanced visualization of other crops like Rice, Wheat, and Pulses.<br>"
-                "📈 Contributed to <strong>High-Level Design (HLD) and Low-Level Design (LLD)</strong> documentation, wireframes, and architecture, enhancing project planning.<br>"
-                "🤝 Strengthened <strong>project management</strong> and skills, adhering to industry standards and delivering a comprehensive video presentation of findings."
-        }
-    ]
-    
-    for exp in experiences:
-        # Generate base64-encoded data URI for the certificate file
-        try:
-            with open(exp['certificate'], "rb") as file:
-                file_data = file.read()
-                base64_encoded = base64.b64encode(file_data).decode()
-                file_href = f"data:application/pdf;base64,{base64_encoded}"
-                file_name = exp['certificate'].split('/')[-1]  # Extract file name for download
-        except FileNotFoundError:
-            file_href = "#"  # Fallback to avoid breaking the layout
-            file_name = exp['certificate']
-            error_message = f"Certificate file '{exp['certificate']}' not found"
+            predictions = model.predict(X)
+            
+            residuals = y - predictions
+            mse = np.mean(residuals**2)
+            confidence_level = 0.95
+            t_value = stats.t.ppf((1 + confidence_level) / 2, len(X) - 2)
+            X_mean = np.mean(X)
+            X_var = np.sum((X - X_mean)**2)
+            ci_se = np.sqrt(mse * (1 + 1/len(X) + (X - X_mean)**2/X_var)).flatten()
+            ci = t_value * ci_se
+            
+            future_days = np.array(range(len(daily_sales) + 1, len(daily_sales) + 15)).reshape(-1, 1)
+            future_predictions = model.predict(future_days)
+            future_ci_se = np.sqrt(mse * (1 + 1/len(X) + (future_days - X_mean)**2/X_var)).flatten()
+            future_ci = t_value * future_ci_se
+            
+            all_days = np.concatenate([X, future_days]).flatten()
+            all_predictions = np.concatenate([predictions, future_predictions])
+            all_ci_lower = np.concatenate([predictions - ci, future_predictions - future_ci])
+            all_ci_upper = np.concatenate([predictions + ci, future_predictions + future_ci])
+            
+            fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+            ax.plot(X.flatten(), y, "o-", label="Actual Sales")
+            ax.plot(future_days.flatten(), future_predictions, "o--", color="red", label="Forecast")
+            ax.fill_between(all_days, all_ci_lower, all_ci_upper, color="red", alpha=0.1, label="95% CI")
+            ax.set_xlabel("Day")
+            ax.set_ylabel("Sales (₹)")
+            ax.set_title("14-Day Sales Forecast with Confidence Intervals")
+            ax.legend()
+            plt.tight_layout()
+            st.pyplot(fig)
+            
+            weekly_forecast = sum(future_predictions[:7])
+            two_week_forecast = sum(future_predictions)
+            st.metric("Predicted 7-Day Revenue", f"₹{weekly_forecast:.2f}")
+            st.metric("Predicted 14-Day Revenue", f"₹{two_week_forecast:.2f}")
+            r_squared = model.score(X, y)
+            st.metric("Forecast Reliability (R²)", f"{r_squared:.2f}")
         except Exception as e:
-            file_href = "#"
-            file_name = exp['certificate']
-            error_message = f"Error accessing certificate file: {str(e)}"
-        else:
-            error_message = None
+            st.error(f"Could not create forecast")
+    else:
+        st.info("Need at least 10 orders to create a sales forecast.")
+    
+    st.subheader("📊 Advanced Order Status Analysis")
+    status_metrics = org_orders.groupby("status").agg({
+        "pending_amount": "sum",
+        "revenue": "sum",
+        "quantity": "sum"
+    }).reset_index()
+    col1, col2 = st.columns(2)
+    with col1:
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=status_metrics, x="status", y="pending_amount", ax=ax, palette="Reds_d")
+        ax.set_xlabel("Order Status")
+        ax.set_ylabel("Pending Amount (₹)")
+        ax.set_title("Pending Amount by Status")
+        for i, v in enumerate(status_metrics["pending_amount"]):
+            ax.text(i, v, f"₹{v:.2f}", ha="center", va="bottom")
+        plt.tight_layout()
+        st.pyplot(fig)
+    with col2:
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=status_metrics, x="status", y="revenue", ax=ax, palette="Blues_d")
+        ax.set_xlabel("Order Status")
+        ax.set_ylabel("Revenue (₹)")
+        ax.set_title("Revenue by Status")
+        for i, v in enumerate(status_metrics["revenue"]):
+            ax.text(i, v, f"₹{v:.2f}", ha="center", va="bottom")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+    st.subheader("🌟 Customer Segmentation (RFM Analysis)")
+    if len(org_orders) >= 5:
+        current_date = datetime.now()
+        rfm = org_orders.groupby("receiver_name").agg({
+            "date": lambda x: (current_date - x.max()).days,
+            "order_id": "count",
+            "revenue": "sum"
+        }).reset_index()
+        rfm.columns = ["receiver_name", "recency", "frequency", "monetary"]
         
-        # Render the card with the downloadable link 
-            st.markdown(f"""
-            <div class="card">
-                <div class="timeline-item">
-                    <h3 class="card-title">{exp['company']}</h3>
-                    <h4 class="card-subtitle">{exp['position']}</h4>
-                    <p style="font-weight: 600; color: #3498db;">{exp['period']}</p>
-                    <p class="card-text">{exp['description']}</p>
-                    <div style="margin-top: 1rem;">
-                        <a class="download-btn" href="{file_href}" download="{file_name}">
-                            📜 Download Certificate
-                        </a>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Display error message if file access failed
-        if error_message:
-            st.error(error_message)
-
-def areas_of_interest_section():
-    st.markdown('<h2 class="section-header"> 🎯  <span>Areas of Interest</span></h2>', unsafe_allow_html=True)
+        def assign_fallback_scores(series, n_bins=4):
+            if series.nunique() < n_bins:
+                return pd.Series(np.linspace(1, n_bins, len(series)), index=series.index).rank(method='dense').astype(int)
+            else:
+                try:
+                    return pd.qcut(series, n_bins, labels=[4, 3, 2, 1], duplicates="drop")
+                except:
+                    bins = pd.cut(series, bins=n_bins, labels=[4, 3, 2, 1], include_lowest=True)
+                    return bins
+                
+        try:
+            rfm["R_score"] = pd.qcut(rfm["recency"], 4, labels=[4, 3, 2, 1], duplicates="drop")
+        except ValueError as e:
+            rfm["R_score"] = assign_fallback_scores(rfm["recency"])
+        
+        try:
+            rfm["F_score"] = pd.qcut(rfm["frequency"], 4, labels=[1, 2, 3, 4], duplicates="drop")
+        except ValueError as e:
+            rfm["F_score"] = assign_fallback_scores(rfm["frequency"])
+        
+        try:
+            rfm["M_score"] = pd.qcut(rfm["monetary"], 4, labels=[1, 2, 3, 4], duplicates="drop")
+        except ValueError as e:
+            rfm["M_score"] = assign_fallback_scores(rfm["monetary"])
+        
+        rfm["RFM_score"] = rfm["R_score"].astype(int) + rfm["F_score"].astype(int) + rfm["M_score"].astype(int)
+        
+        def assign_segment(score):
+            if score >= 10:
+                return "VIP Customers"
+            elif score >= 7:
+                return "Loyal Customers"
+            elif score >= 4:
+                return "Occasional Customers"
+            else:
+                return "At-Risk Customers"
+        
+        rfm["segment"] = rfm["RFM_score"].apply(assign_segment)
+        segment_counts = rfm["segment"].value_counts().reset_index()
+        segment_counts.columns = ["segment", "count"]
+        
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.barplot(data=segment_counts, x="count", y="segment", ax=ax, palette="viridis")
+        ax.set_xlabel("Number of Customers")
+        ax.set_ylabel("Customer Segment")
+        ax.set_title("Customer Segmentation by RFM Analysis")
+        for i, v in enumerate(segment_counts["count"]):
+            ax.text(v, i, f"{v}", va="center")
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        st.write("**Customer Segments and Names**")
+        for segment in rfm["segment"].unique():
+            customers = rfm[rfm["segment"] == segment]["receiver_name"].tolist()
+            st.write(f"**{segment}**: {', '.join(customers)}")
+        
+        st.write("**What this means**:")
+        st.write("- **VIP Customers**: Recent, frequent, and high-spending customers. Focus on retaining them.")
+        st.write("- **Loyal Customers**: Regular buyers. Offer loyalty rewards to keep them engaged.")
+        st.write("- **Occasional Customers**: Infrequent buyers. Encourage more purchases with promotions.")
+        st.write("- **At-Risk Customers**: Haven't ordered recently. Reach out to re-engage them.")
+    else:
+        st.info("Need at least 5 orders to perform RFM analysis.")
     
-    st.markdown('<div </div>', unsafe_allow_html=True)
-    st.markdown('<div </div>', unsafe_allow_html=True)
-    
-    areas_of_interest = {
-        "Core Areas of Data Science": [
-            {
-                "name": "🤖Machine Learning (ML)",
-                "description": "Developing predictive models using algorithms like regression, classification, and clustering. Focused on optimizing model performance and interpretability."
-            },
-            {
-                "name": "🧠Deep Learning",
-                "description": "Building neural networks for complex tasks like image recognition and NLP. Passionate about leveraging frameworks like TensorFlow and PyTorch."
-            },
-            {
-                "name": "🗣️Natural Language Processing (NLP)",
-                "description": "Creating solutions for text analysis, sentiment detection, and chatbots. Skilled in using NLTK, SpaCy, and Transformers for language tasks."
-            },
-            {
-                "name": "📊Data Analytics",
-                "description": "Extracting actionable insights from data to drive business decisions. Proficient in statistical analysis and visualization tools like Power BI."
-            },
-            {
-                "name": "🔍Exploratory Data Analysis (EDA)",
-                "description": "Uncovering patterns and trends through data visualization and statistical techniques. Adept at using Pandas, Seaborn, and Matplotlib for insights."
-            },
-            {
-                "name": "📊Business Intelligence (BI)",
-                "description": "Crafting interactive dashboards to communicate insights effectively. Expertise in Power BI, Tableau, and Looker for strategic reporting."
-            }
-        ],
-        "Infrastructure & Engineering": [
-            {
-                "name": "☁️Cloud Computing",
-                "description": "Deploying scalable data solutions on platforms like AWS, Azure, and Google Cloud. Focused on cost-efficient and secure cloud architectures."
-            },
-            {
-                "name": "🛢️Database Management",
-                "description": "Managing relational and NoSQL databases like MySQL, PostgreSQL, and MongoDB. Skilled in optimizing queries and ensuring data integrity."
-            },
-            {
-                "name": "🚀Model Deployment & MLOps",
-                "description": "Operationalizing ML models with tools like MLflow and Docker. Ensuring seamless integration and monitoring in production environments."
-            },
-            {
-                "name": "🧮Big Data & Distributed Computing",
-                "description": "Processing large-scale datasets using Hadoop, Spark, and distributed systems. Focused on efficient data handling for real-time analytics."
-            },
-            {
-                "name": "⚙️Data Engineering",
-                "description": "Designing robust ETL pipelines for data integration and processing. Experienced with tools like Apache Airflow and SQL for scalable workflows."
-            },
-            {
-                "name": "🤖AutoML & Low-code Platforms",
-                "description": "Automating model selection and hyperparameter tuning with tools like H2O.ai, Auto-sklearn, and Google AutoML. Enabling rapid prototyping through low-code platforms like DataRobot and KNIME."
-            }
-        ],
-        "AI Specializations": [
-            {
-                "name": "📸Computer Vision",
-                "description": "Designing and training models to interpret visual data using techniques like image classification, object detection, and segmentation with CNNs and OpenCV."
-            },
-            {
-                "name": "🎮Reinforcement Learning",
-                "description": "Building intelligent agents that learn by interacting with environments. Skilled in policy gradients, Q-learning, and OpenAI Gym."
-            },
-            {
-                "name": "🌀Generative AI",
-                "description": "Creating synthetic data, images, and text using GANs and large language models. Experience with tools like DALL·E, GPT, and StyleGAN."
-            }
+    st.subheader("📦 Order Size Analysis")
+    if not org_orders.empty:
+        order_sizes = org_orders[["quantity", "receiver_name", "product"]]
+        fig, ax = plt.subplots(figsize=(FIGURE_WIDTH, FIGURE_HEIGHT))
+        sns.histplot(data=order_sizes, x="quantity", bins=20, ax=ax, color="skyblue")
+        ax.set_xlabel("Order Size (Quantity)")
+        ax.set_ylabel("Number of Orders")
+        ax.set_title("Distribution of Order Sizes")
+        mean_size = order_sizes["quantity"].mean()
+        median_size = order_sizes["quantity"].median()
+        ax.axvline(mean_size, color="red", linestyle="--", label=f"Mean: {mean_size:.1f}")
+        ax.axvline(median_size, color="green", linestyle="--", label=f"Median: {median_size:.1f}")
+        ax.legend()
+        plt.tight_layout()
+        st.pyplot(fig)
+        top_customers = order_sizes.groupby("receiver_name")["quantity"].sum().reset_index()
+        top_customers = top_customers.sort_values("quantity", ascending=False).head(5)
+        st.write("**Top 5 Customers by Total Order Size**:")
+        for _, row in top_customers.iterrows():
+            st.write(f"- {row['receiver_name']}: {row['quantity']} units")
+        st.write("**What this means**:")
+        st.write("- **Large orders**: Customers or products with high quantities may indicate bulk purchasing behavior.")
+        st.write("- **Small orders**: Frequent small orders may suggest opportunities to bundle products.")
+        st.write("- **Action**: Offer discounts for bulk orders or target high-volume customers with special promotions.")
+    else:
+        st.info("No orders available to analyze order sizes.")
 
+def show_edit_order_form(order):
+    
+    st.title("Edit Order")
+    
+    with st.form("edit_order_form"):
+        receiver_name = st.text_input("Receiver Name", value=order["receiver_name"])
+        date = st.date_input("Order Date", pd.to_datetime(order["date"]).date())
+        expected_delivery_date = st.date_input("Expected Delivery Date", pd.to_datetime(order["expected_delivery_date"]).date())
+        product = st.text_input("Product", value=order["product"])
+        description = st.text_area("Description (Optional)", value=order["description"])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            quantity = st.number_input("Quantity", min_value=1, value=int(order["quantity"]))
+        with col2:
+            price = st.number_input("Price per Unit (₹)", min_value=0.01, value=float(order["price"]), step=0.01)
+        
+        basic_price = quantity * price
+        st.write(f"**Basic Price: ₹{basic_price:.2f}**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            gst = st.number_input("GST (%)", min_value=0.0, value=float(order["gst"]), step=0.1)
+        with col2:
+            advance_payment = st.number_input("Advance Payment (₹)", min_value=0.0, value=float(order["advance_payment"]), step=0.01)
+        
+        total_amount_with_gst = basic_price + (basic_price * (gst / 100))
+        pending_amount = total_amount_with_gst - advance_payment
+        
+        st.write(f"**Total Amount with GST: ₹{total_amount_with_gst:.2f}**")
+        st.write(f"**Pending Amount: ₹{pending_amount:.2f}**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            submitted = st.form_submit_button("Save Changes")
+        with col2:
+            cancel = st.form_submit_button("Cancel")
+        
+        if submitted:
+            if receiver_name and product:
+                if edit_order(order["order_id"], receiver_name, date, expected_delivery_date,
+                             product, description, quantity, price, gst, advance_payment):
+                    st.session_state.editing_order = None
+                    st.session_state.form_submitted = True
+                    st.session_state.form_message = "Order updated successfully!"
+                    st.session_state.form_status = "success"
+                    st.rerun()
+        
+        if cancel:
+            st.session_state.editing_order = None
+            st.rerun()
+
+def show_manage_orders():
+    
+    st.title("Manage Orders")
+    
+    if st.session_state.form_submitted:
+        if st.session_state.form_status == "success":
+            st.success(st.session_state.form_message)
+        elif st.session_state.form_status == "error":
+            st.error(st.session_state.form_message)
+        if st.button("Clear"):
+            clear_form_feedback()
+    
+    org_orders = get_org_orders()
+    
+    if org_orders.empty:
+        st.info("No orders to display.")
+        return
+    
+    if st.session_state.editing_order is not None:
+        order_to_edit = org_orders[org_orders["order_id"] == st.session_state.editing_order].iloc[0]
+        show_edit_order_form(order_to_edit)
+        return
+    
+    st.subheader("Filter Orders")
+    col1, col2 = st.columns(2)
+    with col1:
+        status_filter = st.selectbox("Status", ["All", "Pending", "Completed"])
+    with col2:
+        date_range = st.date_input("Date Range", 
+                                  value=[], 
+                                  help="Select a date range to filter orders.")
+    
+    filtered_orders = org_orders.copy()
+
+    if status_filter != "All":
+        filtered_orders = filtered_orders[filtered_orders["status"] == status_filter]
+    
+    if len(date_range) == 2:
+        start_date, end_date = date_range
+        filtered_orders["date"] = pd.to_datetime(filtered_orders["date"])
+        filtered_orders = filtered_orders[
+            (filtered_orders["date"] >= pd.Timestamp(start_date)) & 
+            (filtered_orders["date"] <= pd.Timestamp(end_date))
         ]
-    }
     
-    cols = st.columns(2)
+    filtered_orders = filtered_orders.sort_values(by="order_id",ascending=False)
     
-    for i, (category, areas) in enumerate(areas_of_interest.items()):
-        with cols[i % 2]:
-            area_content = ''.join([
-                f'<div class="interest-item"><span class="skill-tag">{area["name"]}</span><p class="card-text">{area["description"]}</p></div>'
-                for area in areas
-            ])
-            st.markdown(f"""
-            <div class="card">
-                <h3 class="card-title">{category}</h3>
-                <div class="interest-list">
-                    {area_content}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+    st.subheader("Orders")
+    if filtered_orders.empty:
+        st.info("No orders match the filter criteria.")
+        return
+    
+    for _, order in filtered_orders.iterrows():
+        # Calculate pending quantity
+        pending_quantity = order["quantity"] - order["delivered_quantity"]
+        #expander label
+        expander_label = (
+            f"Order #{order['order_id']} - {order['product']} - {order['status']} -"
+            f"(Pending Quantity: {pending_quantity}, Pending Amount: ₹{order['pending_amount']:.2f})"
+        )
+        with st.expander(expander_label):
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.write(f"**Receiver:** {order['receiver_name']}")
+                st.write(f"**Date:** {order['date']}")
+                st.write(f"**Expected Delivery:** {order['expected_delivery_date']}")
+                st.write(f"**Product:** {order['product']}")
+                if order["description"]:
+                    st.write(f"**Description:** {order['description']}")
+                st.write(f"**Quantity Ordered:** {order['quantity']}")
+                st.write(f"**Quantity Delivered:** {order['delivered_quantity']}")
+                st.write(f"**Pending Quantity:** {pending_quantity}")
+                st.write(f"**Price per Unit:** ₹{order['price']:.2f}")
+                st.write(f"**Basic Price:** ₹{order['basic_price']:.2f}")
+                st.write(f"**GST (%):** {order['gst']:.1f}%")
+                st.write(f"**Advance Payment:** ₹{order['advance_payment']:.2f}")
+                st.write(f"**Total Amount with GST:** ₹{order['total_amount_with_gst']:.2f}")
+                st.write(f"**Pending Amount:** ₹{order['pending_amount']:.2f}")
+            
+            with col2:
+                order_id = order["order_id"]
+                if st.button(f"Edit Order", key=f"edit_{order_id}"):
+                    st.session_state.editing_order = order_id
+                    st.rerun()
+                
+                if st.button(f"Delete Order", key=f"delete_{order_id}"):
+                    if delete_order(order_id):
+                        st.rerun()
+                
+                if order["status"] == "Pending":
+                    if st.button(f"Mark as Completed", key=f"complete_{order_id}"):
+                        update_order_status(order_id, "Completed")
+                        st.session_state.form_submitted = True
+                        st.session_state.form_message = "Order marked as completed!"
+                        st.session_state.form_status = "success"
+                        st.rerun()
+            
+            # Delivery Management
+            st.subheader("Deliveries")
+            deliveries = load_deliveries(order_id, st.session_state.current_org)
+            if deliveries.empty:
+                st.info("No deliveries recorded for this order.")
+            else:
+                for _, delivery in deliveries.iterrows():
+                    with st.container():
+                        st.write(f"**Delivery ID:** {delivery['delivery_id']}")
+                        st.write(f"**Quantity:** {delivery['delivery_quantity']}")
+                        st.write(f"**Date:** {delivery['delivery_date']}")
+                        st.write(f"**Total Amount Received:** ₹{delivery['total_amount_received']:.2f}")
+                        if delivery["url"]:
+                            try:
+                                response = requests.get(delivery["url"], timeout=5)
+                                response.raise_for_status()
+                                file_data = response.content
+                                file_ext = delivery["file_name"].split(".")[-1].lower()
+                                mime_types = {
+                                    "pdf": "application/pdf",
+                                    "jpg": "image/jpeg",
+                                    "jpeg": "image/jpeg",
+                                    "png": "image/png"
+                                }
+                                mime = mime_types.get(file_ext, "application/octet-stream")
+                                st.download_button(
+                                    label="Download E-way Bill",
+                                    data=file_data,
+                                    file_name=f"ewaybill_delivery_{delivery['delivery_id']}.{file_ext}",
+                                    mime=mime,
+                                    key=f"download_delivery_ewaybill_{order_id}_{delivery['delivery_id']}"
+                                )
+                            except requests.RequestException as e:
+                                st.warning(f"E-way bill not accessible ")
+                        
+                        if st.button("Delete Delivery", key=f"delete_delivery_{order_id}_{delivery['delivery_id']}"):
+                            success, message = delete_delivery(order_id, delivery["delivery_id"])
+                            if success:
+                                st.session_state.form_submitted = True
+                                st.session_state.form_message = message
+                                st.session_state.form_status = "success"
+                            else:
+                                st.session_state.form_submitted = True
+                                st.session_state.form_message = message
+                                st.session_state.form_status = "error"
+                            st.rerun()
+                        st.markdown("---")
+            
+            if order["delivered_quantity"] < order["quantity"]:
+                with st.form(f"add_delivery_form_{order_id}"):
+                    delivery_quantity = st.number_input(
+                        "Delivery Quantity",
+                        min_value=1,
+                        max_value=order["quantity"] - order["delivered_quantity"],
+                        value=1
+                    )
+                    delivery_date = st.date_input("Delivery Date", value=datetime.today())
+                    total_amount_received = st.number_input(
+                        "Total Amount Received (₹)",
+                        min_value=0.0,
+                        value=0.0,
+                        step=0.01,
+                        help="Enter the amount received for this delivery."
+                    )
+                    uploaded_file = st.file_uploader(
+                        "Upload E-way Bill",
+                        type=["pdf", "jpg", "png"],
+                        key=f"delivery_ewaybill_{order_id}"
+                    )
+                    
+                    submitted = st.form_submit_button("Add Delivery")
+                    
+                    if submitted:
+                        file_data = uploaded_file.read() if uploaded_file else None
+                        file_name = uploaded_file.name if uploaded_file else None
+                        success, message = add_delivery(
+                            order_id, delivery_quantity, delivery_date, total_amount_received, file_data, file_name
+                        )
+                        if success:
+                            st.session_state.form_submitted = True
+                            st.session_state.form_message = message
+                            st.session_state.form_status = "success"
+                        else:
+                            st.session_state.form_submitted = True
+                            st.session_state.form_message = message
+                            st.session_state.form_status = "error"
+                        st.rerun()
 
+import shutil
+import tempfile
+from datetime import datetime, timedelta
+def show_export_reports():
+    st.title("Export Reports")
+    
+    org_orders = get_org_orders()
+    
+    if org_orders.empty:
+        st.info("No orders to export.")
+        return
+    
+    st.subheader("Export Order List")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        status_filter = st.selectbox("Status", ["All", "Pending", "Completed"])
+    with col2:
+        date_range = st.date_input("Date Range", 
+                                 value=[], 
+                                 help="Select a date range to filter orders.")
+    
+    filtered_orders = org_orders.copy()
+    if status_filter != "All":
+        filtered_orders = filtered_orders[filtered_orders["status"] == status_filter]
+    
+    if len(date_range) == 2:
+        start_date, end_date = date_range
+        filtered_orders["date"] = pd.to_datetime(filtered_orders["date"])
+        filtered_orders = filtered_orders[
+            (filtered_orders["date"] >= pd.Timestamp(start_date)) & 
+            (filtered_orders["date"] <= pd.Timestamp(end_date))
+        ]
+    
+    # Add revenue column to filtered_orders
+    filtered_orders["revenue"] = 0.0
+    for idx, row in filtered_orders.iterrows():
+        deliveries = load_deliveries(row["order_id"], row["org"])
+        delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+        filtered_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
+    
+    st.dataframe(filtered_orders)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Export to Excel"):
+            excel_data = export_to_excel(filtered_orders)
+            st.download_button(
+                label="Download Excel File",
+                data=excel_data,
+                file_name="order_report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+    with col2:
+        st.button("Export to PDF (Coming Soon)", disabled=True)
+    
+    st.subheader("Revenue Summary")
+    
+    if not org_orders.empty:
+        org_orders["date"] = pd.to_datetime(org_orders["date"])
+        org_orders["month"] = org_orders["date"].dt.strftime("%Y-%m")
+        org_orders["year"] = org_orders["date"].dt.year
+        
+        # Calculate revenue for each order
+        org_orders["revenue"] = 0.0
+        for idx, row in org_orders.iterrows():
+            deliveries = load_deliveries(row["order_id"], row["org"])
+            delivery_amount = deliveries["total_amount_received"].sum() if not deliveries.empty else 0
+            org_orders.at[idx, "revenue"] = row["advance_payment"] + delivery_amount
+        
+        # Year range filter for monthly revenue
+        years = sorted(org_orders["year"].unique())
+        if len(years) == 1:
+            # Handle case where there is only one year
+            st.write(f"**Data available for year: {years[0]}**")
+            filtered_revenue = org_orders[org_orders["year"] == years[0]]
+        else:
+            # Use slider for multiple years, defaulting to oldest and latest
+            year_range = st.slider("Select Year Range for Monthly Revenue",
+                                  min_value=int(min(years)),
+                                  max_value=int(max(years)),
+                                  value=(int(min(years)), int(max(years))),
+                                  step=1)
+            # Filter orders by selected year range
+            filtered_revenue = org_orders[
+                (org_orders["year"] >= year_range[0]) & 
+                (org_orders["year"] <= year_range[1])
+            ]
+        
+        monthly_revenue = filtered_revenue.groupby("month").agg({
+            "revenue": "sum"
+        }).reset_index()
+        monthly_revenue.columns = ["Month", "Total Revenue"]
+        
+        # Yearly revenue calculation
+        yearly_revenue = org_orders.groupby("year").agg({
+            "revenue": "sum"
+        }).reset_index()
+        yearly_revenue.columns = ["Year", "Total Revenue"]
+        yearly_revenue["Year"] = yearly_revenue["Year"].astype(str)
+        
+        # Display monthly and yearly revenue
+        st.write("**Monthly Revenue**")
+        if not monthly_revenue.empty:
+            st.dataframe(monthly_revenue)
+            if st.button("Export Revenue Summary"):
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    monthly_revenue.to_excel(writer, index=False)
+                st.download_button(
+                    label="Download Revenue Summary",
+                    data=output.getvalue(),
+                    file_name="revenue_summary.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        else:
+            st.info("No orders to calculate revenue for selected year range.")
+        
+        st.write("**Yearly Revenue**")
+        if not yearly_revenue.empty:
+            st.dataframe(yearly_revenue)
+            if st.button("Export Yearly Revenue"):
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    yearly_revenue.to_excel(writer, index=False)
+                st.download_button(
+                    label="Download Yearly Revenue",
+                    data=output.getvalue(),
+                    file_name="yearly_revenue.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        else:
+            st.info("No orders to calculate yearly revenue.")
+        
+        st.subheader("Export All Deliveries")
+        default_end_date = datetime.now().date()
+        default_start_date = default_end_date - timedelta(days=365)
+        delivery_date_range = st.date_input("Delivery Date Range", 
+                                       value=(default_start_date, default_end_date), 
+                                       help="Select a date range to filter deliveries for export.")
+    
+        if st.button("Export All Deliveries to Zip"):
+            # Create a temporary directory to store Excel files
+            with tempfile.TemporaryDirectory() as temp_dir:
+                for _, row in filtered_orders.iterrows():
+                    order_id = row["order_id"]
+                    org = row["org"]
+                    receiver_name = row["receiver_name"]
+                    deliveries = load_deliveries(order_id, org)
+                    
+                    if not deliveries.empty:
+                        # Apply date range filter to deliveries
+                        if len(delivery_date_range) == 2:
+                            delivery_start_date, delivery_end_date = delivery_date_range
+                            deliveries["delivery_date"] = pd.to_datetime(deliveries["delivery_date"])
+                            deliveries = deliveries[
+                                (deliveries["delivery_date"] >= pd.Timestamp(delivery_start_date)) & 
+                                (deliveries["delivery_date"] <= pd.Timestamp(delivery_end_date))
+                            ]
+                        
+                        if not deliveries.empty:
+                            # Prepare delivery details for export
+                            export_deliveries = deliveries[[
+                                "delivery_id", "delivery_quantity", "delivery_date", "total_amount_received"
+                            ]].rename(columns={
+                                "delivery_id": "Delivery ID",
+                                "delivery_quantity": "Quantity",
+                                "delivery_date": "Date",
+                                "total_amount_received": "Total Amount Received"
+                            })
+                            
+                            # Get order details for header
+                            order_details = filtered_orders[
+                                (filtered_orders["order_id"] == order_id) & (filtered_orders["org"] == org)
+                            ][[
+                                "order_id", "receiver_name", "quantity", "advance_payment", "gst", 
+                                "total_amount_with_gst", "pending_amount", "product", "description", 
+                                "date", "expected_delivery_date", "status", "created_by"
+                            ]].rename(columns={
+                                "order_id": "Order ID",
+                                "receiver_name": "Receiver Name",
+                                "quantity": "Total Quantity",
+                                "advance_payment": "Advance Payment",
+                                "gst": "GST%",
+                                "total_amount_with_gst": "Total Amount with GST",
+                                "pending_amount": "Pending Amount",
+                                "product": "Product",
+                                "description": "Description",
+                                "date": "Order Date",
+                                "expected_delivery_date": "Expected Delivery Date",
+                                "status": "Status",
+                                "created_by": "Created By"
+                            })
+                            
+                            # Create Excel file for this order
+                            output = BytesIO()
+                            workbook = openpyxl.Workbook()
+                            sheet = workbook.active
+                            sheet.title = "Deliveries"
+                            
+                            # Write order details as header
+                            sheet.append(["Order Details"])
+                            for r in dataframe_to_rows(order_details, index=False, header=True):
+                                sheet.append(r)
+                            sheet.append([]) 
+                            
+                            # Write deliveries
+                            sheet.append(["Delivery Details"])
+                            for r in dataframe_to_rows(export_deliveries, index=False, header=True):
+                                sheet.append(r)
+                            
+                            workbook.save(output)
+                            output.seek(0)
+                            
+                            # Save Excel file to temporary directory
+                            safe_receiver_name = receiver_name.replace(" ", "_").replace("/", "_")
+                            excel_file_path = os.path.join(temp_dir, f"{order_id}_{safe_receiver_name}.xlsx")
+                            with open(excel_file_path, "wb") as f:
+                                f.write(output.getvalue())
+                
+                # Create zip file from temporary directory
+                zip_buffer = BytesIO()
+                zip_path = os.path.join(temp_dir, "all_deliveries.zip")
+                shutil.make_archive(os.path.join(temp_dir, "all_deliveries"), 'zip', temp_dir)
+                with open(zip_path, "rb") as f:
+                    zip_buffer.write(f.read())
+                
+                zip_buffer.seek(0)
+                st.download_button(
+                    label="Download All Deliveries Zip",
+                    data=zip_buffer.getvalue(),
+                    file_name="all_deliveries.zip",
+                    mime="application/zip"
+                )
+    
+        st.subheader("Export Deliveries for a Specific Order")
+        order_options = [(row["order_id"], row["org"], row["product"]) for _, row in filtered_orders.iterrows()]
+        order_display = [f"Order {order_id} - {product}" for order_id, org, product in order_options]
+        selected_order = st.selectbox("Select Order", order_display)
+    
+        if selected_order:
+            order_id, org, _ = order_options[order_display.index(selected_order)]
+            deliveries = load_deliveries(order_id, org)
+        
+            if deliveries.empty:
+                st.info(f"No deliveries found for Order {order_id} - {org}.")
+            else:
+                st.write("**Deliveries**")
+                for _, delivery in deliveries.iterrows():
+                    st.write(f"**Delivery ID**: {delivery['delivery_id']}")
+                    st.write(f"**Quantity**: {delivery['delivery_quantity']}")
+                    st.write(f"**Date**: {delivery['delivery_date']}")
+                    st.write(f"**Total Amount Received**: ₹{delivery['total_amount_received']:.2f}")
+                    st.markdown("---")
+                
+                if st.button("Export Deliveries to Excel"):
+                    # Prepare delivery details for export
+                    export_deliveries = deliveries[[
+                        "delivery_id", "delivery_quantity", "delivery_date", "total_amount_received"
+                    ]].rename(columns={
+                        "delivery_id": "Delivery ID",
+                        "delivery_quantity": "Quantity",
+                        "delivery_date": "Date",
+                        "total_amount_received": "Total Amount Received"
+                    })
+                    
+                    # Get order details for header
+                    order_details = filtered_orders[
+                        (filtered_orders["order_id"] == order_id) & (filtered_orders["org"] == org)
+                    ][[
+                        "order_id", "receiver_name", "quantity", "advance_payment", "gst", 
+                        "total_amount_with_gst", "pending_amount", "product", "description", 
+                        "date", "expected_delivery_date", "status", "created_by"
+                    ]].rename(columns={
+                        "order_id": "Order ID",
+                        "receiver_name": "Receiver Name",
+                        "quantity": "Total Quantity",
+                        "advance_payment": "Advance Payment",
+                        "gst": "GST%",
+                        "total_amount_with_gst": "Total Amount with GST",
+                        "pending_amount": "Pending Amount",
+                        "product": "Product",
+                        "description": "Description",
+                        "date": "Order Date",
+                        "expected_delivery_date": "Expected Delivery Date",
+                        "status": "Status",
+                        "created_by": "Created By"
+                    })
+                    
+                    # Create Excel file with order details as header and deliveries below
+                    output = BytesIO()
+                    workbook = openpyxl.Workbook()
+                    sheet = workbook.active
+                    sheet.title = "Deliveries"
+                    
+                    # Write order details as header
+                    sheet.append(["Order Details"])
+                    for r in dataframe_to_rows(order_details, index=False, header=True):
+                        sheet.append(r)
+                    sheet.append([]) 
+                    
+                    # Write deliveries
+                    sheet.append(["Delivery Details"])
+                    for r in dataframe_to_rows(export_deliveries, index=False, header=True):
+                        sheet.append(r)
+                    
+                    workbook.save(output)
+                    output.seek(0)
+                    
+                    st.download_button(
+                        label="Download Deliveries Excel",
+                        data=output.getvalue(),
+                        file_name=f"deliveries_order_{order_id}_{org}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+def show_account_settings():
+    
+    st.title("Account Settings")
+    
+    st.subheader("User Information")
+    st.write(f"**Username:** {st.session_state.current_user}")
+    st.write(f"**Organization:** {st.session_state.current_org}")
+    
+    st.subheader("Change Password")
+    with st.form("change_password_form"):
+        current_password = st.text_input("Current Password", type="password")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        submit = st.form_submit_button("Change Password")
+        
+        if submit:
+            if current_password and new_password and confirm_password:
+                users = load_users()
+                if users[st.session_state.current_user]["password"] == current_password:
+                    if new_password == confirm_password:
+                        password_pattern = r"^(?=.*[A-Za-z])(?=.*\d)(?=.*[@₹!%*?&])[A-Za-z\d@₹!%*?&]{6,}₹"
+                        if not re.match(password_pattern, new_password):
+                            st.error("New password must be at least 6 characters long and contain at least one letter, one digit, and one special symbol (@₹!%*?&).")
+                        else:
+                            supabase.table("users").update({"password": new_password}).eq("username", st.session_state.current_user).execute()
+                            st.success("Password changed successfully!")
+                    else:
+                        st.error("New passwords do not match!")
+                else:
+                    st.error("Current password is incorrect!")
+            else:
+                st.error("All fields are required!")
+    
+    st.subheader("Delete Account")
+    st.warning(
+        "Warning: Deleting your account will permanently remove all your data, "
+        "including orders and reports. This action cannot be undone."
+    )
+    
+    if st.button("Delete My Account"):
+        st.session_state.show_delete_account = True
+        st.rerun()
 
 def main():
-    
-    # Load custom CSS
-    load_css()
-    
-    # Initialize session state
-    if 'current_section' not in st.session_state:
-        st.session_state.current_section = 'Home'
-    
-    # Sidebar Navigation
-    with st.sidebar:
-        st.markdown('<div class="sidebar-container">', unsafe_allow_html=True)
-        sections = ['Home', 'Areas of Interest', 'Education', 'Certifications', 'Skills', 'Projects', 'Experience']
-        
-        for section in sections:
-            # Add active class wrapper for current section
-            if st.session_state.current_section == section:
-                st.markdown("""
-                    <div class="nav-active">
-                        <style>
-                            .nav-active .stButton > button {
-                                background: #ffffff !important;
-                                border: 2px solid #3B82F6 !important;
-                                color: #000000 !important;
-                                padding: 0.5rem 1rem !important;
-                                position: relative;
-                                overflow: hidden;
-                                transition: all 0.3s ease;
-                                outline: none;
-                            }
-                            .nav-active .stButton > button:hover {
-                                background: #ffffff !important;
-                                border: 2px solid #3B82F6 !important;
-                                color: #000000 !important;
-                                box-shadow: 0 6px 20px rgba(0,0,0,0.25) !important;
-                                transform: translateX(5px) !important;
-                            }
-                            .nav-active .stButton > button:active {
-                                background: #ffffff !important;
-                                border: 2px solid #3B82F6 !important;
-                                color: #000000 !important;
-                                transform: scale(0.95) !important;
-                                box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-                            }
-                            .nav-active .stButton > button::after {
-                                content: '';
-                                position: absolute;
-                                top: 0;
-                                left: -100%;
-                                width: 100%;
-                                height: 100%;
-                                background: linear-gradient(
-                                    90deg,
-                                    transparent,
-                                    rgba(255, 255, 255, 0.2),
-                                    transparent
-                                );
-                                animation: shine 2s infinite;
-                            }
-                            @keyframes shine {
-                                0% { left: -100%; }
-                                50% { left: 100%; }
-                                100% { left: 100%; }
-                            }
-                        </style>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            if st.button(section, key=f"nav_{section}"):
-                st.session_state.current_section = section
-                st.rerun()
-            
-            if st.session_state.current_section == section:
-                st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Display selected section
-    if st.session_state.current_section == 'Home':
-        home_section()
-        
-    elif st.session_state.current_section == 'Areas of Interest':
-        areas_of_interest_section()
-    elif st.session_state.current_section == 'Education':
-        education_section()
-    elif st.session_state.current_section == 'Certifications':
-        certifications_section()
-    elif st.session_state.current_section == 'Skills':
-        skills_section()
-    elif st.session_state.current_section == 'Projects':
-        projects_section()
-    elif st.session_state.current_section == 'Experience':
-        experience_section()
+    if not st.session_state.authenticated:
+        show_login_page()
+    else:
+        menu = show_sidebar()
+        if menu == "Dashboard":
+            show_dashboard()
+        elif menu == "Add Order":
+            show_add_order()
+        elif menu == "Manage Orders":
+            show_manage_orders()
+        elif menu == "Export Reports":
+            show_export_reports()
+        elif menu == "Account Settings":
+            show_account_settings()
+        elif menu == "Admin Panel" and st.session_state.is_admin:
+            show_admin_panel()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
